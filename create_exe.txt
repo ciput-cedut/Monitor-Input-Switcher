@@ -1,0 +1,3 @@
+pyinstaller --onefile --noconsole --icon=monitor_manager_icon.ico --add-data "monitor_manager_icon.ico;." monitor_manager.py
+
+pyinstaller --onefile --noconsole --icon=monitor_manager_icon.ico --add-data "monitor_manager_icon.ico;." monitor_manager_adv.py

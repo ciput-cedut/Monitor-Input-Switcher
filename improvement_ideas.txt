@@ -1,0 +1,47 @@
+# Monitor Input Switcher - Improvement Ideas
+
+Here are a few ideas for improving the tool, ranging from simple to more advanced:
+
+### 1. Command-Line Interface (CLI)✅
+
+*   **Idea:** Add a command-line interface to allow switching inputs without opening the GUI. This would be useful for power users who want to create scripts or hotkeys to switch to specific inputs.
+*   **Example Usage:**
+    ```bash
+    monitor_manager.exe --monitor 1 --input HDMI1
+    ```
+*   **Benefits:** Faster switching, scriptable, can be integrated with other tools.
+
+### 2. Favorite or Quick-Switch Buttons✅
+
+*   **Idea:** Add a "Favorites" section to the GUI where users can save their most frequently used monitor/input combinations. This would allow for one-click switching to a preferred setup.
+*   **Benefits:** Faster and more convenient for users who regularly switch between the same inputs.
+
+### 3. Automatic Switching Based on Active Window
+
+*   **Idea:** This is a more advanced feature. The tool could automatically switch a monitor's input when a specific application becomes the active window. For example, when a game is launched, the monitor could automatically switch to the input connected to the gaming PC.
+*   **Benefits:** A "smarter" tool that anticipates the user's needs.
+
+### 4. Brightness and Contrast Controls
+
+*   **Idea:** Since the `monitorcontrol` library also supports adjusting brightness and contrast, these features could be added to the GUI. This would turn the tool into a more general-purpose monitor control utility.
+*   **Benefits:** More functionality and value for the user.
+
+### 5. Theme and Appearance Customization✅
+
+*   **Idea:** Allow the user to change the application's theme (light/dark mode) and accent color. `customtkinter` makes this relatively easy to implement.
+*   **Benefits:** A more modern and visually appealing application.
+
+### 6. Error when Downloading
+
+*   **Idea:** Prevent warning that shown up when first time downloading from server. (Caused by untrusted source?)
+
+
+### 7. Monitor Input Differentiation
+
+*   **Idea:** Indicate which monitor input that is connected to PC. May also indicate what is connected to each input(may consume more time?)
+*   **Benefits:** User can easily determine which input to switch.
+
+
+
+
+pyinstaller --onefile --noconsole --icon=monitor_manager_icon.ico --add-data "monitor_manager_icon.ico;." monitor_manager.py

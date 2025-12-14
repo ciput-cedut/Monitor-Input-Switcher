@@ -1,0 +1,427 @@
+import customtkinter
+from monitorcontrol import get_monitors, InputSource
+import platform
+import logging
+import threading
+import os
+import sys
+from screeninfo import get_monitors as get_screen_info
+import screen_brightness_control as sbc
+
+# Import WMI only on Windows
+if platform.system() == 'Windows':
+    import wmi
+    import pythoncom
+
+# Set up logging
+logging.basicConfig(filename='monitor_manager.log', level=logging.INFO,
+                    format='%(asctime)s - %(levelname)s - %(message)s')
+
+
+def resource_path(relative_path):
+    """ Get absolute path to resource, works for dev and for PyInstaller """
+    try:
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+    return os.path.join(base_path, relative_path)
+
+
+class App(customtkinter.CTk):
+    def __init__(self):
+        super().__init__()
+
+        self.title("Monitor Input Switcher")
+        self.geometry("500x350")  # Adjusted height
+        # iconbitmap may fail on non-windows or missing file - wrap it
+        try:
+            self.iconbitmap(resource_path('monitor_manager_icon.ico'))
+        except Exception as e:
+            logging.info(f"Could not set icon: {e}")
+
+        self.main_frame = customtkinter.CTkFrame(self)
+        self.main_frame.pack(pady=20, padx=20, fill="both", expand=True)
+
+        self.monitor_label = customtkinter.CTkLabel(self.main_frame, text="Select a monitor:")
+        self.monitor_label.pack(pady=(0, 5))
+
+        self.monitor_menu = customtkinter.CTkOptionMenu(self.main_frame, values=["Loading..."], command=self.update_inputs)
+        self.monitor_menu.set("Loading...")
+        self.monitor_menu.pack(pady=(0, 10), fill="x", padx=20)
+
+        self.input_label = customtkinter.CTkLabel(self.main_frame, text="Select an input source:")
+        self.input_label.pack(pady=(10, 5))
+
+        self.input_menu = customtkinter.CTkOptionMenu(self.main_frame, values=["Loading..."])
+        self.input_menu.set("Loading...")
+        self.input_menu.pack(pady=(0, 20), fill="x", padx=20)
+
+        self.progress_bar = customtkinter.CTkProgressBar(self.main_frame, mode='indeterminate')
+
+        self.button_frame = customtkinter.CTkFrame(self)
+        self.button_frame.pack(pady=(0, 20), padx=20, fill="x")
+
+        self.switch_button = customtkinter.CTkButton(self.button_frame, text="Switch Input", command=self.switch_input)
+        self.switch_button.pack(side="left", padx=(0, 10), expand=True)
+
+        self.refresh_button = customtkinter.CTkButton(self.button_frame, text="Refresh", command=self.refresh_monitors)
+        self.refresh_button.pack(side="right", padx=(10, 0), expand=True)
+
+        self.status_label = customtkinter.CTkLabel(self, text="", wraplength=480)
+        self.status_label.pack(pady=(0, 10), padx=20)
+
+        # Name at the bottom
+        self.name_label = customtkinter.CTkLabel(self, text="By: LuqmanHakimAmiruddin@PDC", font=("Arial", 10))
+        self.name_label.pack(pady=(5, 10))
+
+        # Will hold the monitorcontrol monitor objects (list)
+        self.monitor_refs = []
+
+        self.refresh_monitors()
+
+    def refresh_monitors(self):
+        self.status_label.configure(text="Fetching all monitors info...")
+        self.progress_bar.pack(pady=(10, 10), fill="x", padx=20)
+        self.progress_bar.start()
+
+        self.switch_button.configure(state="disabled")
+        self.refresh_button.configure(state="disabled")
+
+        # Set dropdowns to loading state
+        self.monitor_menu.configure(values=["Loading..."])
+        self.monitor_menu.set("Loading...")
+        self.input_menu.configure(values=["Loading..."])
+        self.input_menu.set("Loading...")
+
+        thread = threading.Thread(target=self.load_monitor_data_thread, daemon=True)
+        thread.start()
+
+    def load_monitor_data_thread(self):
+        if platform.system() == 'Windows':
+            pythoncom.CoInitialize()
+        try:
+            # gather data (this method is thread-safe wrt UI because updates happen via self.after)
+            self.monitors_data = self.get_all_monitor_data()
+        finally:
+            if platform.system() == 'Windows':
+                pythoncom.CoUninitialize()
+        # update UI from main thread
+        self.after(0, self.update_ui_after_load)
+
+    def update_ui_after_load(self):
+        # monitor_names for the dropdown
+        self.monitor_names = [data['display_name'] for data in self.monitors_data]
+
+        self.monitor_menu.configure(values=self.monitor_names)
+        if self.monitor_names:
+            self.monitor_menu.set(self.monitor_names[0])
+            # trigger inputs update for first monitor
+            self.update_inputs(self.monitor_names[0])
+            self.status_label.configure(text="Ready.")
+        else:
+            self.monitor_menu.set("No monitors found")
+            self.input_menu.configure(values=[])
+            self.input_menu.set("")
+            self.status_label.configure(text="No monitors found. Please check connections.")
+
+        self.progress_bar.stop()
+        self.progress_bar.pack_forget()
+
+        self.switch_button.configure(state="normal")
+        self.refresh_button.configure(state="normal")
+
+    def get_all_monitor_data(self):
+        """Return list of dicts for each monitor and also save monitor object references in self.monitor_refs"""
+        all_data = []
+        self.monitor_refs = []
+
+        try:
+            monitors = list(get_monitors())
+            logging.info(f"Found {len(monitors)} monitors.")
+        except Exception as e:
+            logging.error(f"Could not get monitors: {e}")
+            return []
+
+        # Try WMI PNP IDs on Windows (helpful for mapping if needed)
+        pnp_ids = []
+        if platform.system() == "Windows":
+            try:
+                c = wmi.WMI()
+                wmi_monitors = c.Win32_DesktopMonitor()
+                for monitor in wmi_monitors:
+                    pnp_id = getattr(monitor, 'PNPDeviceID', None)
+                    pnp_ids.append(pnp_id)
+                logging.info(f"WMI PnP IDs: {pnp_ids}")
+            except Exception as e:
+                logging.error(f"Failed to get PnP IDs from WMI: {e}")
+
+        # get info from sbc if available
+        try:
+            monitors_info = sbc.list_monitors_info(method='vcp') or []
+        except Exception as e:
+            logging.warning(f"Could not get monitor info from sbc: {e}")
+            monitors_info = []
+
+        for i, monitor_obj in enumerate(monitors):
+            # store the reference so we can re-open the same monitor later
+            self.monitor_refs.append(monitor_obj)
+            with monitor_obj:
+                # Model
+                try:
+                    vcp = monitor_obj.get_vcp_capabilities() or {}
+                    model = vcp.get('model', "Unknown")
+                except Exception as e:
+                    model = "Unknown"
+                    logging.warning(f"Could not get model for monitor {i}: {e}")
+
+                # Brand/manufacturer: try sbc list, fallback to Unknown
+                try:
+                    brand = (monitors_info[i].get('manufacturer') if i < len(monitors_info) else None) or "Unknown"
+                except Exception:
+                    brand = "Unknown"
+
+                # Inputs: be robust to many shapes
+                input_names = []
+                try:
+                    inputs = vcp.get('inputs', None)
+                    if inputs is None:
+                        raise KeyError("no inputs key")
+
+                    # inputs might be: list of ints, list of objects, list of tuples, dict, etc.
+                    for inp in inputs:
+                        # object with .name or .value
+                        if hasattr(inp, "name"):
+                            input_names.append(str(inp.name))
+                        elif isinstance(inp, (list, tuple)) and len(inp) >= 1:
+                            # could be (code, name) or (code,)
+                            code = inp[0]
+                            try:
+                                code = int(code)
+                            except Exception:
+                                code = None
+                            if code is not None:
+                                input_names.append(get_input_name(code))
+                            else:
+                                input_names.append(str(inp))
+                        elif isinstance(inp, int):
+                            input_names.append(get_input_name(inp))
+                        else:
+                            # fallback to string
+                            try:
+                                input_names.append(str(inp))
+                            except Exception:
+                                input_names.append("UNKNOWN_INPUT")
+                except (KeyError, TypeError):
+                    # fallback guess list
+                    input_names = ["DP1", "DP2", "HDMI1", "HDMI2"]
+
+                # Current input: robust handling
+                current_name = "Unknown"
+                try:
+                    cur = monitor_obj.get_input_source()
+                    # cur might be enum-like or int or object with .value/.name
+                    if hasattr(cur, "value"):
+                        code = int(cur.value)
+                        current_name = get_input_name(code)
+                    else:
+                        try:
+                            code = int(cur)
+                            current_name = get_input_name(code)
+                        except Exception:
+                            # maybe it has .name
+                            current_name = getattr(cur, "name", str(cur))
+                except Exception as e:
+                    logging.warning(f"Could not get current input for monitor {i}: {e}")
+                    current_name = "Unknown"
+
+                display_name = f"{brand} - {model}"
+                all_data.append({
+                    "display_name": display_name,
+                    "inputs": input_names,
+                    "id": i,  # index in the monitors list / self.monitor_refs
+                    "current_input": current_name
+                })
+
+        logging.info(f"All monitor data: {all_data}")
+        return all_data
+
+    def update_inputs(self, selected_monitor_name):
+        # find the monitor data for selected name
+        for data in self.monitors_data:
+            if data['display_name'] == selected_monitor_name:
+                self.selected_monitor_data = data
+                break
+        else:
+            self.selected_monitor_data = None
+
+        if not self.selected_monitor_data:
+            self.input_menu.configure(values=[])
+            self.input_menu.set("")
+            return
+
+        self.input_menu.configure(values=self.selected_monitor_data['inputs'])
+        if self.selected_monitor_data['inputs']:
+            current_input = self.selected_monitor_data.get('current_input', "Unknown")
+            if current_input in self.selected_monitor_data['inputs']:
+                self.input_menu.set(current_input)
+            else:
+                self.input_menu.set(self.selected_monitor_data['inputs'][0])
+        else:
+            self.input_menu.set("No inputs found")
+
+    def switch_input(self):
+        new_input_str = self.input_menu.get()
+        if new_input_str == "No inputs found" or not hasattr(self, 'selected_monitor_data') or self.selected_monitor_data is None:
+            self.status_label.configure(text="Cannot switch: No monitor or input selected.")
+            return
+
+        try:
+            selected_monitor_id = self.selected_monitor_data['id']
+
+            # Move the app off the monitor being switched if it's on that monitor.
+            # Compare coordinates rather than object identity.
+            all_screens = list(get_screen_info())
+            app_screen = self.get_current_screen()
+
+            # Safely check selected screen by index — but screeninfo ordering is not guaranteed to match monitorcontrol ordering.
+            # We attempt to use index only as a convenience; if index is out of range, we log and skip moving.
+            if 0 <= selected_monitor_id < len(all_screens):
+                target_screen = all_screens[selected_monitor_id]
+                if app_screen:
+                    on_same = (
+                        app_screen.x == target_screen.x and
+                        app_screen.y == target_screen.y and
+                        app_screen.width == target_screen.width and
+                        app_screen.height == target_screen.height
+                    )
+                    if on_same:
+                        other_screens = [s for idx, s in enumerate(all_screens) if idx != selected_monitor_id]
+                        if other_screens:
+                            new_screen = other_screens[0]
+                            self.geometry(f"+{new_screen.x}+{new_screen.y}")
+                            self.update_idletasks()
+            else:
+                logging.warning("Selected monitor ID is out of range of available screens (screeninfo).")
+
+            # Resolve new_input (numeric) in a robust way
+            # Handle human labels we created earlier (USB-C, THUNDERBOLT, INPUT_XX)
+            if new_input_str.upper() == "USB-C" or new_input_str.upper().replace("-", "") == "USBC":
+                new_input = 27
+            elif new_input_str.upper() == "THUNDERBOLT":
+                new_input = 26
+            elif new_input_str.startswith("INPUT_"):
+                try:
+                    new_input = int(new_input_str.split('_')[1])
+                except Exception:
+                    raise ValueError(f"Bad INPUT_ format: {new_input_str}")
+            else:
+                # Try to map via our get_input_name reverse lookup
+                # First try numeric literal strings like "15" -> int(15)
+                try:
+                    new_input = int(new_input_str)
+                except Exception:
+                    # Try to find attribute on InputSource enum
+                    try:
+                        new_input = getattr(InputSource, new_input_str)
+                        # If InputSource.* is enum-like, extract numeric if necessary
+                        if hasattr(new_input, "value"):
+                            new_input = int(new_input.value)
+                    except Exception:
+                        # try mapping known names (like DP1 -> 15)
+                        reverse_map = {v: k for k, v in get_input_name_map().items()}
+                        if new_input_str in reverse_map:
+                            new_input = reverse_map[new_input_str]
+                        else:
+                            raise AttributeError(f"Unknown input name: {new_input_str}")
+
+            # Reopen the exact monitor object we saved earlier
+            if selected_monitor_id < len(self.monitor_refs):
+                monitor_ref = self.monitor_refs[selected_monitor_id]
+                with monitor_ref:
+                    monitor_ref.set_input_source(new_input)
+                self.status_label.configure(text=f"Successfully switched to {new_input_str}")
+            else:
+                raise IndexError("Selected monitor reference not found (index out of range).")
+
+        except AttributeError as ae:
+            self.status_label.configure(text=f"Invalid input source: {new_input_str} ({ae})")
+            logging.error(f"Invalid input source selection: {new_input_str} - {ae}")
+        except Exception as e:
+            self.status_label.configure(text=f"Error switching input: {e}")
+            logging.error(f"Failed to switch input: {e}", exc_info=True)
+
+    def get_current_screen(self):
+        """Return the screen (screeninfo object) containing the app window, comparing coords."""
+        self.update_idletasks()
+        x, y = self.winfo_x(), self.winfo_y()
+        for screen in get_screen_info():
+            try:
+                if screen.x <= x < screen.x + screen.width and screen.y <= y < screen.y + screen.height:
+                    return screen
+            except Exception:
+                continue
+        return None
+
+
+def get_input_name(code):
+    """Convert input code to readable name"""
+    standard_inputs = {
+        0: "OFF",
+        1: "ANALOG1",
+        2: "ANALOG2",
+        3: "DVI1",
+        4: "DVI2",
+        5: "COMPOSITE1",
+        6: "COMPOSITE2",
+        7: "SVIDEO1",
+        8: "SVIDEO2",
+        9: "TUNER1",
+        10: "TUNER2",
+        11: "TUNER3",
+        12: "COMPONENT1",
+        13: "COMPONENT2",
+        14: "COMPONENT3",
+        15: "DP1",
+        16: "DP2",
+        17: "HDMI1",
+        18: "HDMI2",
+        26: "THUNDERBOLT",
+        27: "USB-C"
+    }
+    return standard_inputs.get(int(code), f"UNKNOWN CODE {code}")
+
+
+def get_input_name_map():
+    """Return the mapping used above (useful for reverse lookups)."""
+    # duplicate the dictionary so we can do a reverse mapping easily
+    return {
+        0: "OFF",
+        1: "ANALOG1",
+        2: "ANALOG2",
+        3: "DVI1",
+        4: "DVI2",
+        5: "COMPOSITE1",
+        6: "COMPOSITE2",
+        7: "SVIDEO1",
+        8: "SVIDEO2",
+        9: "TUNER1",
+        10: "TUNER2",
+        11: "TUNER3",
+        12: "COMPONENT1",
+        13: "COMPONENT2",
+        14: "COMPONENT3",
+        15: "DP1",
+        16: "DP2",
+        17: "HDMI1",
+        18: "HDMI2",
+        26: "THUNDERBOLT",
+        27: "USB-C"
+    }
+
+
+if __name__ == "__main__":
+    try:
+        app = App()
+        app.mainloop()
+    except Exception as e:
+        logging.critical(f"Unhandled exception: {e}", exc_info=True)
