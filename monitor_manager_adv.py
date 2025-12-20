@@ -141,7 +141,8 @@ class App(customtkinter.CTk):
             
         self.shortcuts = self.load_shortcuts() or {}
         self.favorites = self.load_favorites() or {}
-        self.settings = self.load_settings() or {"theme": "light", "tray_on": "close"}
+        # Default window behavior is normal Windows behavior (no system tray)
+        self.settings = self.load_settings() or {"theme": "light", "tray_on": "none"}
         self.apply_theme()
         
         # Apply tray behavior based on settings
@@ -200,6 +201,13 @@ class App(customtkinter.CTk):
             font=("Arial", 16)
             )
         self.settings_button.pack(side="right", padx=2)
+
+        # Track open dialogs and loading state so they can be disabled during refresh
+        self.settings_window = None
+        self.theme_window = None
+        self.manage_window = None
+        self.editor_window = None
+        self._loading_monitors = False
 
         # ===== MONITOR SELECTION CARD =====
         monitor_card = customtkinter.CTkFrame(main_container)
@@ -337,10 +345,35 @@ class App(customtkinter.CTk):
 
         self.switch_button.configure(state="disabled")
         self.refresh_button.configure(state="disabled")
-        self.monitor_menu.configure(values=["Loading..."])
+        # Gray-out related controls while loading monitor data
+        self.monitor_menu.configure(values=["Loading..."], state="disabled")
         self.monitor_menu.set("Loading...")
-        self.input_menu.configure(values=["Loading..."])
+        self.input_menu.configure(values=["Loading..."], state="disabled")
         self.input_menu.set("Loading...")
+        # Disable shortcuts, settings, theme and manage favorites until monitors are detected
+        try:
+            self.shortcuts_button.configure(state="disabled")
+        except Exception:
+            pass
+        try:
+            self.settings_button.configure(state="disabled")
+        except Exception:
+            pass
+        try:
+            self.theme_button.configure(state="disabled")
+        except Exception:
+            pass
+        try:
+            self.manage_favorites_btn.configure(state="disabled")
+        except Exception:
+            pass
+
+        # Mark loading and disable any open dialogs so users can't interact with them while refresh is in progress
+        self._loading_monitors = True
+        try:
+            self._set_toplevels_state('disabled')
+        except Exception:
+            pass
 
         thread = threading.Thread(target=self.load_monitor_data_thread, daemon=True)
         thread.start()
@@ -361,23 +394,64 @@ class App(customtkinter.CTk):
         self.monitor_menu.configure(values=self.monitor_names)
         if self.monitor_names:
             self.monitor_menu.set(self.monitor_names[0])
+            # Enable monitor and input controls now that data is available
+            try:
+                self.monitor_menu.configure(state="normal")
+            except Exception:
+                pass
+            try:
+                self.input_menu.configure(state="normal")
+            except Exception:
+                pass
             self.update_inputs(self.monitor_names[0])
             self.status_label.configure(text="✅ Ready to switch inputs")
             self.shortcuts_button.configure(state="normal")
             self.manage_favorites_btn.configure(state="normal")
+            try:
+                self.settings_button.configure(state="normal")
+            except Exception:
+                pass
+            try:
+                self.theme_button.configure(state="normal")
+            except Exception:
+                pass
             self.refresh_favorites_buttons()
         else:
             self.monitor_menu.set("No monitors detected")
+            try:
+                self.monitor_menu.configure(state="disabled")
+            except Exception:
+                pass
             self.input_menu.configure(values=[])
             self.input_menu.set("")
+            try:
+                self.input_menu.configure(state="disabled")
+            except Exception:
+                pass
             self.status_label.configure(text="❌ No monitors found. Check connections and refresh.")
             self.shortcuts_button.configure(state="disabled")
             self.manage_favorites_btn.configure(state="disabled")
+            # Keep settings and theme available so the user can change preferences even if no monitors are found
+            try:
+                self.settings_button.configure(state="normal")
+            except Exception:
+                pass
+            try:
+                self.theme_button.configure(state="normal")
+            except Exception:
+                pass
 
         self.progress_bar.stop()
         self.progress_bar.pack_forget()
         self.switch_button.configure(state="normal")
         self.refresh_button.configure(state="normal")
+
+        # Clear loading flag and re-enable any dialogs that were disabled
+        self._loading_monitors = False
+        try:
+            self._set_toplevels_state('normal')
+        except Exception:
+            pass
     
     def get_all_monitor_data(self):
         """Get all monitor data - keeping original implementation"""
@@ -685,6 +759,25 @@ class App(customtkinter.CTk):
         except Exception as e:
             logging.error(f"Error applying theme: {e}")
 
+    def _recursive_set_state(self, widget, state):
+        """Recursively set state for widgets that support it."""
+        try:
+            widget.configure(state=state)
+        except Exception:
+            pass
+        for child in widget.winfo_children():
+            self._recursive_set_state(child, state)
+
+    def _set_toplevels_state(self, state):
+        """Set the enabled/disabled state for any open Toplevel dialogs."""
+        for attr in ('settings_window', 'theme_window', 'manage_window', 'editor_window'):
+            win = getattr(self, attr, None)
+            if win:
+                try:
+                    self._recursive_set_state(win, state)
+                except Exception:
+                    logging.debug(f"Failed to set state {state} for {attr}")
+
 
     def add_favorite(self, name, monitor_id, input_source):
         try:
@@ -816,11 +909,15 @@ class App(customtkinter.CTk):
     def show_settings(self):
         """Show settings dialog"""
         settings_window = customtkinter.CTkToplevel(self)
+        # Track this window so it can be disabled during refresh
+        self.settings_window = settings_window
         settings_window.title("Settings")
         settings_window.geometry("420x380")
         settings_window.resizable(False, False)
         settings_window.transient(self)
         settings_window.grab_set()
+        # Clear reference when window is destroyed
+        settings_window.bind('<Destroy>', lambda e: setattr(self, 'settings_window', None))
         
         frame = customtkinter.CTkFrame(settings_window)
         frame.pack(fill="both", expand=True, padx=20, pady=20)
@@ -843,9 +940,20 @@ class App(customtkinter.CTk):
         )
         tray_desc.pack(anchor="w", pady=(0, 10))
         
-        tray_on = self.settings.get("tray_on", "close")
+        # Default to normal (no system tray) behavior when settings missing
+        tray_on = self.settings.get("tray_on", "none")
         self.tray_radio_var = customtkinter.StringVar(value=tray_on)
         
+        # Put the 'Normal Windows behavior' option first so it's shown on top
+        none_radio = customtkinter.CTkRadioButton(
+            tray_frame,
+            text="Normal Windows behavior (no system tray)",
+            variable=self.tray_radio_var,
+            value="none",
+            command=self.update_tray_setting
+        )
+        none_radio.pack(anchor="w", pady=3, padx=5)
+
         close_radio = customtkinter.CTkRadioButton(
             tray_frame,
             text="When I click Close (X) → Hide to tray (keep running)",
@@ -873,15 +981,6 @@ class App(customtkinter.CTk):
         )
         both_radio.pack(anchor="w", pady=3, padx=5)
         
-        none_radio = customtkinter.CTkRadioButton(
-            tray_frame,
-            text="Normal Windows behavior (no system tray)",
-            variable=self.tray_radio_var,
-            value="none",
-            command=self.update_tray_setting
-        )
-        none_radio.pack(anchor="w", pady=3, padx=5)
-        
         # Add helpful note in highlighted box
         note_frame = customtkinter.CTkFrame(tray_frame, fg_color=("#E3F2FD", "#1E3A5F"))
         note_frame.pack(fill="x", pady=(12, 0))
@@ -905,11 +1004,14 @@ class App(customtkinter.CTk):
     def show_theme_settings(self):
         """Show theme settings dialog"""
         theme_window = customtkinter.CTkToplevel(self)
+        # Track open theme dialog for disabling during refresh
+        self.theme_window = theme_window
         theme_window.title("Theme Settings")
         theme_window.geometry("320x220")
         theme_window.resizable(False, False)
         theme_window.transient(self)
         theme_window.grab_set()
+        theme_window.bind('<Destroy>', lambda e: setattr(self, 'theme_window', None))
         
         frame = customtkinter.CTkFrame(theme_window)
         frame.pack(fill="both", expand=True, padx=20, pady=20)
@@ -955,7 +1057,8 @@ class App(customtkinter.CTk):
     
     def update_tray_behavior(self):
         """Update window behaviors based on tray_on setting"""
-        tray_on = self.settings.get("tray_on", "close")
+        # Default to normal window behavior (no system tray)
+        tray_on = self.settings.get("tray_on", "none")
         
         # Update close button behavior
         if tray_on in ["close", "both"]:
@@ -1007,8 +1110,8 @@ class App(customtkinter.CTk):
         """Handle window minimize event"""
         # Check if the window state changed to iconic (minimized)
         if event.widget == self and self.state() == 'iconic':
-            # Only minimize to tray if setting allows it
-            tray_on = self.settings.get("tray_on", "close")
+            # Only minimize to tray if setting allows it (default to normal behavior)
+            tray_on = self.settings.get("tray_on", "none")
             if tray_on in ["minimize", "both"]:
                 self.after(10, self.minimize_to_tray)
     
@@ -1029,10 +1132,13 @@ class App(customtkinter.CTk):
     def show_manage_favorites(self):
         """Show manage favorites dialog"""
         manage_window = customtkinter.CTkToplevel(self)
+        # Track this window for temporary disabling during refresh
+        self.manage_window = manage_window
         manage_window.title("Manage Favorites")
         manage_window.resizable(False, False)
         manage_window.transient(self)
         manage_window.grab_set()
+        manage_window.bind('<Destroy>', lambda e: setattr(self, 'manage_window', None))
         
         main_frame = customtkinter.CTkFrame(manage_window)
         main_frame.pack(fill="both", expand=True, padx=15, pady=15)
@@ -1190,11 +1296,13 @@ class App(customtkinter.CTk):
     def show_shortcuts_editor(self):
         """Show shortcuts editor dialog"""
         editor_window = customtkinter.CTkToplevel(self)
+        # Track this editor window so it can be disabled during refresh
+        self.editor_window = editor_window
         editor_window.title("Keyboard Shortcuts")
         editor_window.geometry("520x600")
         editor_window.transient(self)
         editor_window.grab_set()
-        
+        editor_window.bind('<Destroy>', lambda e: setattr(self, 'editor_window', None))        
         main_frame = customtkinter.CTkFrame(editor_window)
         main_frame.pack(fill="both", expand=False, padx=15, pady=15)
         
