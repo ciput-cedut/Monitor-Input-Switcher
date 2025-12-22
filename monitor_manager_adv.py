@@ -912,7 +912,8 @@ class App(customtkinter.CTk):
         # Track this window so it can be disabled during refresh
         self.settings_window = settings_window
         settings_window.title("Settings")
-        settings_window.geometry("420x380")
+        # Slightly larger window to accommodate increased font sizes
+        settings_window.geometry("460x420")
         settings_window.resizable(False, False)
         settings_window.transient(self)
         settings_window.grab_set()
@@ -929,14 +930,14 @@ class App(customtkinter.CTk):
         tray_frame = customtkinter.CTkFrame(frame, fg_color="transparent")
         tray_frame.pack(fill="x", pady=5)
         
-        tray_title = customtkinter.CTkLabel(tray_frame, text=" Window Behavior", font=("Arial", 13, "bold"))
+        tray_title = customtkinter.CTkLabel(tray_frame, text=" Window Behavior", font=("Arial", 14, "bold"))
         tray_title.pack(anchor="w", pady=(0, 3))
         
         tray_desc = customtkinter.CTkLabel(
             tray_frame, 
             text="Choose what happens when you minimize or close the window:", 
-            font=("Arial", 10),
-            text_color="gray"
+            font=("Arial", 11),
+            text_color="#333333"
         )
         tray_desc.pack(anchor="w", pady=(0, 10))
         
@@ -970,7 +971,7 @@ class App(customtkinter.CTk):
             value="minimize",
             command=self.update_tray_setting
         )
-        minimize_radio.pack(anchor="w", pady=3, padx=5)
+        minimize_radio.pack(anchor="w", pady=3, padx=5) 
         
         both_radio = customtkinter.CTkRadioButton(
             tray_frame,
@@ -995,13 +996,14 @@ class App(customtkinter.CTk):
         note_text = customtkinter.CTkLabel(
             note_frame,
             text="When hidden in tray, right-click the tray icon to show or quit",
-            font=("Arial", 10, "bold"),
+            font=("Arial", 11, "bold"),
             justify="left",
-            wraplength=320
+            wraplength=360,
+            text_color="#222222"
         )
         note_text.pack(side="left", padx=(5, 10), pady=8)
 
-        # Save / Cancel buttons for settings
+        # Save / Cancel buttons for settings (centered)
         btn_frame = customtkinter.CTkFrame(frame, fg_color="transparent")
         btn_frame.pack(fill="x", pady=(12, 0))
 
@@ -1021,11 +1023,23 @@ class App(customtkinter.CTk):
                 except Exception:
                     pass
 
-        save_btn = customtkinter.CTkButton(btn_frame, text="Save", command=save_and_apply_settings, height=32)
-        save_btn.pack(side="right", padx=(0, 6))
+        # Center the buttons by placing them in an inner centered frame
+        center_frame = customtkinter.CTkFrame(btn_frame, fg_color="transparent")
+        center_frame.pack(anchor="center")
 
-        cancel_btn = customtkinter.CTkButton(btn_frame, text="Cancel", command=settings_window.destroy, height=32)
-        cancel_btn.pack(side="right", padx=(0, 6))
+        cancel_btn = customtkinter.CTkButton(
+            center_frame,
+            text="Cancel",
+            command=settings_window.destroy,
+            height=36,
+            width=110,
+            fg_color=("#D32F2F", "#C62828"),
+            hover_color=("#C62828", "#B71C1C")
+        )
+        cancel_btn.pack(side="left", padx=8)
+
+        save_btn = customtkinter.CTkButton(center_frame, text="Save", command=save_and_apply_settings, height=36, width=110)
+        save_btn.pack(side="left", padx=8)
 
     def show_theme_settings(self):
         """Show theme settings dialog"""
@@ -1068,11 +1082,26 @@ class App(customtkinter.CTk):
             self.status_label.configure(text="✅ Theme changed successfully")
             theme_window.destroy()
         
-        apply_btn = customtkinter.CTkButton(button_frame, text="Apply", command=apply_settings, height=32)
-        apply_btn.pack(side="left", padx=(0, 10), expand=True, fill="x")
-        
-        cancel_btn = customtkinter.CTkButton(button_frame, text="Cancel", command=theme_window.destroy, height=32)
-        cancel_btn.pack(side="right", padx=(10, 0), expand=True, fill="x")
+        # Place Cancel on the left (red) and Apply on the right (green)
+        cancel_btn = customtkinter.CTkButton(
+            button_frame,
+            text="Cancel",
+            command=theme_window.destroy,
+            height=32,
+            fg_color=("#D32F2F", "#C62828"),
+            hover_color=("#C62828", "#B71C1C")
+        )
+        cancel_btn.pack(side="left", padx=(0, 10), expand=True, fill="x")
+
+        apply_btn = customtkinter.CTkButton(
+            button_frame,
+            text="Apply",
+            command=apply_settings,
+            height=32,
+            fg_color=("#2B7A0B", "#5FB041"),
+            hover_color=("#246A09", "#52A038")
+        )
+        apply_btn.pack(side="right", padx=(10, 0), expand=True, fill="x")
 
     def update_tray_setting(self):
         """Update system tray behavior setting"""
@@ -1283,7 +1312,7 @@ class App(customtkinter.CTk):
             name_label2 = customtkinter.CTkLabel(frm, text="Name:", font=("Arial", 11))
             name_label2.grid(row=0, column=0, sticky="w", pady=(0, 8))
             name_var2 = customtkinter.StringVar(value=name)
-            name_entry2 = customtkinter.CTkEntry(frm, textvariable=name_var2, height=28)
+            name_entry2 = customtkinter.CTkEntry(frm, textvariable=name_var2, height=32)
             name_entry2.grid(row=0, column=1, sticky="ew", pady=(0, 8), padx=(10, 0))
 
             # Monitor
@@ -1295,7 +1324,7 @@ class App(customtkinter.CTk):
             default_mon_str = next((s for s in mon_choices if s.startswith(str(monitor_id) + ":")), mon_choices[0])
 
             mon_var2 = customtkinter.StringVar(value=default_mon_str)
-            mon_menu2 = customtkinter.CTkOptionMenu(frm, variable=mon_var2, values=mon_choices, height=28)
+            mon_menu2 = customtkinter.CTkOptionMenu(frm, variable=mon_var2, values=mon_choices, height=32)
             mon_menu2.grid(row=1, column=1, sticky="ew", pady=(0, 8), padx=(10, 0))
 
             # Input
@@ -1316,7 +1345,7 @@ class App(customtkinter.CTk):
 
             inputs_list2 = inputs_for_monitor_id(sel_id_init) or ["DP1", "HDMI1", "DP2", "HDMI2"]
             input_var2 = customtkinter.StringVar(value=input_source if input_source in inputs_list2 else (inputs_list2[0] if inputs_list2 else "HDMI1"))
-            input_menu2 = customtkinter.CTkOptionMenu(frm, variable=input_var2, values=inputs_list2, height=28)
+            input_menu2 = customtkinter.CTkOptionMenu(frm, variable=input_var2, values=inputs_list2, height=32)
             input_menu2.grid(row=2, column=1, sticky="ew", pady=(0, 8), padx=(10, 0))
 
             frm.grid_columnconfigure(1, weight=1)
@@ -1377,11 +1406,17 @@ class App(customtkinter.CTk):
             btn_frame = customtkinter.CTkFrame(frm, fg_color='transparent')
             btn_frame.grid(row=3, column=0, columnspan=2, sticky='ew', pady=(10, 0))
 
-            save_btn = customtkinter.CTkButton(btn_frame, text="💾 Save", command=save_edit, height=34, width=90)
+            save_btn = customtkinter.CTkButton(btn_frame, text="💾 Save", command=save_edit, height=36, width=100)
             save_btn.pack(side="right", padx=(0, 6))
 
-            cancel_btn = customtkinter.CTkButton(btn_frame, text="Cancel", command=edit_win.destroy, height=34, width=90)
+            cancel_btn = customtkinter.CTkButton(btn_frame, text="Cancel", command=edit_win.destroy, height=36, width=100)
             cancel_btn.pack(side="right", padx=(0, 6))
+
+            # Make the edit dialog a bit larger (but smaller than Manage Favorites)
+            edit_win.update_idletasks()
+            req_w = max(360, min(440, frm.winfo_reqwidth() + 60))
+            req_h = frm.winfo_reqheight() + 40
+            edit_win.geometry(f"{req_w}x{req_h}")
         
         # Add new favorite section
         add_section = customtkinter.CTkFrame(main_frame)
@@ -1513,8 +1548,10 @@ class App(customtkinter.CTk):
         disclaimer_text = customtkinter.CTkLabel(
             disclaimer_frame,
             text="Global hotkeys work even when the app is minimized or in the background.\nPress Ctrl+Shift+H anywhere to show shortcuts help.",
-            font=("Arial", 10, "bold"),
-            justify="left"
+            font=("Arial", 11, "bold"),
+            justify="left",
+            text_color="#333333",
+            wraplength=460
         )
         disclaimer_text.pack(side="left", padx=(5, 10), pady=8)
 
@@ -1522,10 +1559,10 @@ class App(customtkinter.CTk):
         shortcuts_section = customtkinter.CTkFrame(main_frame)
         shortcuts_section.pack(fill="both", expand=True, pady=(0, 15))
         
-        shortcuts_header = customtkinter.CTkLabel(shortcuts_section, text="Current Shortcuts:", font=("Arial", 12, "bold"))
+        shortcuts_header = customtkinter.CTkLabel(shortcuts_section, text="Current Shortcuts:", font=("Arial", 13, "bold"))
         shortcuts_header.pack(anchor="w", padx=12, pady=(12, 8))
         
-        shortcuts_frame = customtkinter.CTkScrollableFrame(shortcuts_section, height=280)
+        shortcuts_frame = customtkinter.CTkScrollableFrame(shortcuts_section, height=320)
         shortcuts_frame.pack(fill="both", expand=True, padx=12, pady=(0, 12))
         
         def update_shortcuts_list():
@@ -1548,26 +1585,35 @@ class App(customtkinter.CTk):
                 label = customtkinter.CTkLabel(
                     shortcut_frame,
                     text=f"{shortcut}: {display_name} → {input_source}",
-                    font=("Arial", 11)
+                    font=("Arial", 12),
+                    wraplength=420
                 )
-                label.pack(side="left", padx=8, pady=6)
+                label.pack(side="left", padx=8, pady=6) 
 
                 btn_frame = customtkinter.CTkFrame(shortcut_frame, fg_color="transparent")
                 btn_frame.pack(side="right", padx=8)
 
                 edit_btn = customtkinter.CTkButton(
-                    btn_frame, text="Edit", width=60, height=28,
+                    btn_frame,
+                    text="Edit",
+                    width=70,
+                    height=32,
+                    font=("Arial", 11),
                     command=lambda s=shortcut: edit_shortcut(s)
                 )
-                edit_btn.pack(side="left", padx=2)
+                edit_btn.pack(side="left", padx=4)
 
                 delete_btn = customtkinter.CTkButton(
-                    btn_frame, text="Delete", width=60, height=28,
+                    btn_frame,
+                    text="Delete",
+                    width=70,
+                    height=32,
+                    font=("Arial", 11),
                     command=lambda s=shortcut: delete_shortcut(s),
                     fg_color=("#D32F2F", "#C62828"),
                     hover_color=("#C62828", "#B71C1C")
                 )
-                delete_btn.pack(side="left", padx=2)
+                delete_btn.pack(side="left", padx=4)
 
             if shown == 0:
                 notice = customtkinter.CTkLabel(shortcuts_frame, text="No shortcuts for currently connected monitors.", text_color="gray")
