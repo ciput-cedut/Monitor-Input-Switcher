@@ -102,7 +102,7 @@ class App(customtkinter.CTk):
     def __init__(self):
         super().__init__()
 
-        self.title("Monitor Input Switcher")
+        self.title("Monitor Manager")
         self.geometry("520x540")
         self.resizable(True, True)  # Allow window resizing
         
@@ -152,7 +152,7 @@ class App(customtkinter.CTk):
 
         # ===== MAIN CONTAINER =====
         main_container = customtkinter.CTkFrame(self, fg_color="transparent")
-        main_container.pack(fill="both", expand=True, padx=15, pady=15)
+        main_container.pack(fill="both", expand=True, padx=15, pady=10)
 
         # ===== HEADER =====
         header = customtkinter.CTkFrame(main_container, height=50)
@@ -161,7 +161,7 @@ class App(customtkinter.CTk):
         
         title_label = customtkinter.CTkLabel(
             header, 
-            text="🖥️ Monitor Input Switcher", 
+            text="Monitor Input Switcher", 
             font=("Arial", 20, "bold")
         )
         title_label.pack(side="left", padx=10, pady=10)
@@ -923,7 +923,7 @@ class App(customtkinter.CTk):
         frame = customtkinter.CTkFrame(settings_window)
         frame.pack(fill="both", expand=True, padx=20, pady=20)
         
-        label = customtkinter.CTkLabel(frame, text="⚙️ Settings", font=("Arial", 16, "bold"))
+        label = customtkinter.CTkLabel(frame, text="⚙️ Tray Settings", font=("Arial", 16, "bold"))
         label.pack(pady=(0, 10))
         
         # System Tray Behavior
@@ -933,11 +933,16 @@ class App(customtkinter.CTk):
         tray_title = customtkinter.CTkLabel(tray_frame, text=" Window Behavior", font=("Arial", 14, "bold"))
         tray_title.pack(anchor="w", pady=(0, 3))
         
+        # Pick readable text colors based on current appearance mode
+        appearance = customtkinter.get_appearance_mode()
+        normal_text_color = "#333333" if appearance == "light" else "#EDEDED"
+        note_text_color = "#222222" if appearance == "light" else "#EDEDED"
+
         tray_desc = customtkinter.CTkLabel(
             tray_frame, 
             text="Choose what happens when you minimize or close the window:", 
             font=("Arial", 11),
-            text_color="#333333"
+            text_color=normal_text_color
         )
         tray_desc.pack(anchor="w", pady=(0, 10))
         
@@ -999,7 +1004,7 @@ class App(customtkinter.CTk):
             font=("Arial", 11, "bold"),
             justify="left",
             wraplength=360,
-            text_color="#222222"
+            text_color=note_text_color
         )
         note_text.pack(side="left", padx=(5, 10), pady=8)
 
@@ -1072,36 +1077,42 @@ class App(customtkinter.CTk):
             )
             theme_radio.pack(anchor="w", padx=20, pady=8)
         
-        button_frame = customtkinter.CTkFrame(frame, fg_color="transparent")
-        button_frame.pack(fill="x", pady=(20, 0))
-        
+        # Save / Cancel buttons centered with spacing like the Window Behavior setting
+        btn_frame = customtkinter.CTkFrame(frame, fg_color="transparent")
+        btn_frame.pack(fill="x", pady=(12, 0))
+
         def apply_settings():
             self.settings["theme"] = theme_var.get()
             self.save_settings()
             self.apply_theme()
             self.status_label.configure(text="✅ Theme changed successfully")
             theme_window.destroy()
-        
-        # Place Cancel on the left (red) and Apply on the right (green)
+
+        # Center the buttons by placing them in an inner centered frame
+        center_frame = customtkinter.CTkFrame(btn_frame, fg_color="transparent")
+        center_frame.pack(anchor="center")
+
         cancel_btn = customtkinter.CTkButton(
-            button_frame,
+            center_frame,
             text="Cancel",
             command=theme_window.destroy,
-            height=32,
+            height=36,
+            width=110,
             fg_color=("#D32F2F", "#C62828"),
             hover_color=("#C62828", "#B71C1C")
         )
-        cancel_btn.pack(side="left", padx=(0, 10), expand=True, fill="x")
+        cancel_btn.pack(side="left", padx=8)
 
         apply_btn = customtkinter.CTkButton(
-            button_frame,
+            center_frame,
             text="Apply",
             command=apply_settings,
-            height=32,
+            height=36,
+            width=110,
             fg_color=("#2B7A0B", "#5FB041"),
             hover_color=("#246A09", "#52A038")
         )
-        apply_btn.pack(side="right", padx=(10, 0), expand=True, fill="x")
+        apply_btn.pack(side="left", padx=8)
 
     def update_tray_setting(self):
         """Update system tray behavior setting"""
@@ -1545,12 +1556,14 @@ class App(customtkinter.CTk):
         )
         disclaimer_icon.pack(side="left", padx=(10, 5), pady=8)
         
+        # Ensure disclaimer text is readable in dark mode
+        disc_color = "#333333" if customtkinter.get_appearance_mode() == "light" else "#EDEDED"
         disclaimer_text = customtkinter.CTkLabel(
             disclaimer_frame,
             text="Global hotkeys work even when the app is minimized or in the background.\nPress Ctrl+Shift+H anywhere to show shortcuts help.",
             font=("Arial", 11, "bold"),
             justify="left",
-            text_color="#333333",
+            text_color=disc_color,
             wraplength=460
         )
         disclaimer_text.pack(side="left", padx=(5, 10), pady=8)
