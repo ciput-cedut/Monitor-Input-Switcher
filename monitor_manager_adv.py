@@ -429,8 +429,8 @@ class App(customtkinter.CTk):
             except Exception:
                 pass
             self.status_label.configure(text="❌ No monitors found. Check connections and refresh.")
-            self.shortcuts_button.configure(state="disabled")
-            self.manage_favorites_btn.configure(state="disabled")
+            self.shortcuts_button.configure(state="normal") #grayout for button (normal/disabled)
+            self.manage_favorites_btn.configure(state="disabled") #grayout for button (normal/disabled)
             # Keep settings and theme available so the user can change preferences even if no monitors are found
             try:
                 self.settings_button.configure(state="normal")
@@ -935,8 +935,8 @@ class App(customtkinter.CTk):
         
         # Pick readable text colors based on current appearance mode
         appearance = customtkinter.get_appearance_mode()
-        normal_text_color = "#333333" if appearance == "light" else "#EDEDED"
-        note_text_color = "#222222" if appearance == "light" else "#EDEDED"
+        normal_text_color = "#000000" if appearance == "Light" else "#EDEDED"
+        note_text_color = "#000000" if appearance == "Light" else "#EDEDED"
 
         tray_desc = customtkinter.CTkLabel(
             tray_frame, 
@@ -1536,11 +1536,12 @@ class App(customtkinter.CTk):
         self.editor_window = editor_window
         editor_window.title("Keyboard Shortcuts")
         editor_window.geometry("520x600")
+        editor_window.resizable(False, False)
         editor_window.transient(self)
         editor_window.grab_set()
         editor_window.bind('<Destroy>', lambda e: setattr(self, 'editor_window', None))        
         main_frame = customtkinter.CTkFrame(editor_window)
-        main_frame.pack(fill="both", expand=False, padx=15, pady=15)
+        main_frame.pack(fill="both", expand=True, padx=15, pady=15)
         
         title = customtkinter.CTkLabel(main_frame, text="⌨️ Keyboard Shortcuts", font=("Arial", 16, "bold"))
         title.pack(pady=(0, 10))
@@ -1557,7 +1558,7 @@ class App(customtkinter.CTk):
         disclaimer_icon.pack(side="left", padx=(10, 5), pady=8)
         
         # Ensure disclaimer text is readable in dark mode
-        disc_color = "#333333" if customtkinter.get_appearance_mode() == "light" else "#EDEDED"
+        disc_color = "#000000" if customtkinter.get_appearance_mode() == "Light" else "#EDEDED"
         disclaimer_text = customtkinter.CTkLabel(
             disclaimer_frame,
             text="Global hotkeys work even when the app is minimized or in the background.\nPress Ctrl+Shift+H anywhere to show shortcuts help.",
@@ -1843,9 +1844,9 @@ def get_input_name(code):
     """Convert input code to readable name"""
     # Standard InputSource enum mapping
     standard_inputs = {
-        0: "OFF",
-        1: "ANALOG1/VGA",
-        2: "ANALOG2",
+        0: "NO INPUT",
+        1: "VGA1", #Change ANALOG1/VGA to VGA1 
+        2: "VGA2", #Change ANALOG2 to VGA2
         3: "DVI1",
         4: "DVI2",
         5: "COMPOSITE1",
