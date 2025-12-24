@@ -607,20 +607,14 @@ class App(customtkinter.CTk):
         else:
             self.input_menu.set("No inputs found")
 
-    def switch_input(self):
-        new_input_str = self.input_menu.get()
-        logging.info(f"Input name: {new_input_str}")
-        if new_input_str == "No inputs found" or not hasattr(self, 'selected_monitor_data'):
-            self.status_label.configure(text="❌ Cannot switch: No monitor or input selected")
-            return
-
+    def move_app_if_on_switching_monitor(self, monitor_id):
+        """Move app window to another monitor if it's on the monitor being switched"""
         try:
-            selected_monitor_id = self.selected_monitor_data['id']
-            logging.info(f"Current Monitor ID: {selected_monitor_id}")
-
-            # Get all screens and check if app is on the screen we're switching
             all_screens = get_screen_info()
-            screen_to_switch = all_screens[selected_monitor_id] if selected_monitor_id < len(all_screens) else None
+            screen_to_switch = all_screens[monitor_id] if monitor_id < len(all_screens) else None
+            
+            if not screen_to_switch:
+                return
             
             # Get app's current screen
             app_x = self.winfo_x()
@@ -639,6 +633,22 @@ class App(customtkinter.CTk):
                     new_screen = other_screens[0]
                     self.geometry(f"+{new_screen.x}+{new_screen.y}")
                     self.update_idletasks()  # Ensure the move is processed
+        except Exception as e:
+            logging.warning(f"Failed to move app window: {e}")
+
+    def switch_input(self):
+        new_input_str = self.input_menu.get()
+        logging.info(f"Input name: {new_input_str}")
+        if new_input_str == "No inputs found" or not hasattr(self, 'selected_monitor_data'):
+            self.status_label.configure(text="❌ Cannot switch: No monitor or input selected")
+            return
+
+        try:
+            selected_monitor_id = self.selected_monitor_data['id']
+            logging.info(f"Current Monitor ID: {selected_monitor_id}")
+
+            # Move app if it's on the monitor being switched
+            self.move_app_if_on_switching_monitor(selected_monitor_id)
 
             # Handle custom input codes (USB-C, Thunderbolt, etc.)
             if new_input_str == "USB-C":
@@ -682,6 +692,9 @@ class App(customtkinter.CTk):
         """Handle global hotkey press"""
         try:
             if monitor_id < len(monitors):
+                # Move app if it's on the monitor being switched
+                self.move_app_if_on_switching_monitor(monitor_id)
+                
                 with monitors[monitor_id] as monitor:
                     # Handle custom input codes
                     if input_source == "USB-C":
@@ -817,6 +830,9 @@ class App(customtkinter.CTk):
             if monitor_id >= len(monitors):
                 self.status_label.configure(text=f"❌ Monitor {monitor_id} not found")
                 return False
+            
+            # Move app if it's on the monitor being switched
+            self.move_app_if_on_switching_monitor(monitor_id)
             
             with monitors[monitor_id] as monitor:
                 if hasattr(InputSource, input_source):
