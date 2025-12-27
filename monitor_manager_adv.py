@@ -11,12 +11,33 @@ import keyboard
 import json
 from tkinter import messagebox
 from screeninfo import get_monitors as get_screen_info
-import winreg
+# FIX #4: Removed unused top-level 'import winreg' - it's imported locally in read_edid() where needed
 from pystray import Icon, Menu, MenuItem
 from PIL import Image, ImageDraw
+import ctypes
 
 # Available themes for customtkinter
-AVAILABLE_THEMES = ["dark", "light"]
+# "system" follows Windows light/dark mode setting
+AVAILABLE_THEMES = ["dark", "light", "system"]
+
+def set_dark_title_bar(window):
+    """Set dark title bar on Windows 10/11 when in dark mode."""
+    if platform.system() != 'Windows':
+        return
+    try:
+        # Check if dark mode is currently active
+        if customtkinter.get_appearance_mode().lower() == "dark":
+            window.update()  # Ensure window is created
+            hwnd = ctypes.windll.user32.GetParent(window.winfo_id())
+            # DWMWA_USE_IMMERSIVE_DARK_MODE = 20
+            DWMWA_USE_IMMERSIVE_DARK_MODE = 20
+            value = ctypes.c_int(1)
+            ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE,
+                ctypes.byref(value), ctypes.sizeof(value)
+            )
+    except Exception:
+        pass  # Silently fail on older Windows versions
 
 # Import WMI only on Windows
 if platform.system() == 'Windows':
@@ -61,10 +82,12 @@ PNP_IDS = {
 
 # USB-C Display Detection:
 # USB-C ports with DisplayPort Alt Mode are detected via DDC/CI VCP codes
-# Code 27 (0x1B) = USB-C with DP Alt Mode
-# Code 26 (0x1A) = Thunderbolt (also uses USB-C connector)
 # Standard InputSource enum covers: HDMI, DP, DVI, VGA, etc.
 # Non-standard codes are displayed as INPUT_<code> for debugging
+
+# FIX #5: VCP Input Source Codes (DDC/CI standard) - replaces magic numbers
+VCP_INPUT_THUNDERBOLT = 26  # Code 0x1A - Thunderbolt (uses USB-C connector)
+VCP_INPUT_USB_C = 27        # Code 0x1B - USB-C with DisplayPort Alt Mode
 
 # Fallback brand detection from model
 MODEL_BRAND_MAP = {
@@ -89,7 +112,9 @@ MODEL_BRAND_MAP = {
     "BDM": "Philips", "PHL": "Philips", "PHI": "Philips"
 }
 
-monitors = get_monitors()
+# FIX #2: Removed static 'monitors = get_monitors()' that only ran at module load.
+# Monitors are now refreshed dynamically in get_all_monitor_data() to detect
+# newly connected/disconnected monitors.
 
 def resource_path(relative_path):
     try:
@@ -114,6 +139,9 @@ class App(customtkinter.CTk):
         # System tray setup
         self.tray_icon = None
         self.is_quitting = False
+        
+        # FIX #2: Instance-level monitors list (refreshed dynamically)
+        self.monitors = []
         
         # Override window close behavior and minimize behavior
         self.protocol("WM_DELETE_WINDOW", self.minimize_to_tray)
@@ -142,7 +170,7 @@ class App(customtkinter.CTk):
         self.shortcuts = self.load_shortcuts() or {}
         self.favorites = self.load_favorites() or {}
         # Default window behavior is normal Windows behavior (no system tray)
-        self.settings = self.load_settings() or {"theme": "light", "tray_on": "none"}
+        self.settings = self.load_settings() or {"theme": "system", "tray_on": "none"}
         self.apply_theme()
         
         # Apply tray behavior based on settings
@@ -458,8 +486,12 @@ class App(customtkinter.CTk):
         all_data = []
         pnp_ids = []
 
+        # FIX #2: Refresh monitors list each time this method is called
+        # This ensures newly connected/disconnected monitors are detected
+        self.monitors = get_monitors()
+
         try:
-            logging.info(f"Found {len(monitors)} monitors.")
+            logging.info(f"Found {len(self.monitors)} monitors.")
             
             if platform.system() == "Windows":
                 try:
@@ -474,15 +506,17 @@ class App(customtkinter.CTk):
             logging.error(f"Could not get monitors: {e}")
             return []
 
-        for monitor in monitors:
-            if platform.system() == "Windows":
-                try:
-                    c = wmi.WMI()
-                    wmi_monitors = c.Win32_DesktopMonitor()
-                    for monitor in wmi_monitors:
-                        pnp_ids.append(getattr(monitor, 'PNPDeviceID', None))
-                except Exception as e:
-                    logging.error(f"Failed to get device information from WMI: {e}")
+        # FIX #1: Collect PnP IDs from WMI once (moved outside the monitor loop)
+        # Previously this was nested inside 'for monitor in monitors:' and used 'for monitor in wmi_monitors:'
+        # which shadowed the outer variable, causing only 1 monitor to be processed.
+        if platform.system() == "Windows":
+            try:
+                c = wmi.WMI()
+                wmi_monitors = c.Win32_DesktopMonitor()
+                for wmi_mon in wmi_monitors:
+                    pnp_ids.append(getattr(wmi_mon, 'PNPDeviceID', None))
+            except Exception as e:
+                logging.error(f"Failed to get device information from WMI: {e}")
         logging.info(f"WMI PnP IDs: {pnp_ids}")
 
         def read_edid(pnp_id):
@@ -504,7 +538,7 @@ class App(customtkinter.CTk):
             except Exception:
                 return "Unknown"
 
-        for i, monitor_obj in enumerate(monitors):
+        for i, monitor_obj in enumerate(self.monitors):
             if platform.system() == "Windows" and i < len(pnp_ids) and pnp_ids[i]:
                 pnp_id_str = pnp_ids[i].upper()
                 if any(x in pnp_id_str for x in ["SHP", "BOE", "LGD", "AUO", "SEC", "EDP"]):
@@ -555,9 +589,9 @@ class App(customtkinter.CTk):
                         elif isinstance(inp, int):
                             # USB-C with DisplayPort Alt Mode uses code 27 (0x1B)
                             # Thunderbolt also uses USB-C connector with DP protocol
-                            if inp == 27:
+                            if inp == VCP_INPUT_USB_C:
                                 input_names.append("USB-C")
-                            elif inp == 26:
+                            elif inp == VCP_INPUT_THUNDERBOLT:
                                 input_names.append("THUNDERBOLT")
                             else:
                                 # Unknown input code - display as is for debugging
@@ -652,9 +686,9 @@ class App(customtkinter.CTk):
 
             # Handle custom input codes (USB-C, Thunderbolt, etc.)
             if new_input_str == "USB-C":
-                new_input = 27  # USB-C with DisplayPort Alt Mode
+                new_input = VCP_INPUT_USB_C
             elif new_input_str == "THUNDERBOLT":
-                new_input = 26  # Thunderbolt
+                new_input = VCP_INPUT_THUNDERBOLT
             elif new_input_str.startswith("INPUT_"):
                 # Handle unknown input codes (INPUT_XX format)
                 new_input = int(new_input_str.split('_')[1])
@@ -663,7 +697,7 @@ class App(customtkinter.CTk):
                 new_input = getattr(InputSource, new_input_str)
             logging.info(f"Input name: {new_input}")
 
-            with monitors[selected_monitor_id] as monitor:
+            with self.monitors[selected_monitor_id] as monitor:
                 logging.info(f"monitor: {monitor}")
                 monitor.set_input_source(new_input)
             logging.info(f"Input name after: {new_input}")
@@ -691,16 +725,16 @@ class App(customtkinter.CTk):
     def handle_global_hotkey(self, monitor_id, input_source):
         """Handle global hotkey press"""
         try:
-            if monitor_id < len(monitors):
+            if monitor_id < len(self.monitors):
                 # Move app if it's on the monitor being switched
                 self.move_app_if_on_switching_monitor(monitor_id)
                 
-                with monitors[monitor_id] as monitor:
+                with self.monitors[monitor_id] as monitor:
                     # Handle custom input codes
                     if input_source == "USB-C":
-                        input_obj = 27
+                        input_obj = VCP_INPUT_USB_C
                     elif input_source == "THUNDERBOLT":
-                        input_obj = 26
+                        input_obj = VCP_INPUT_THUNDERBOLT
                     elif input_source.startswith("INPUT_"):
                         input_obj = int(input_source.split('_')[1])
                     elif hasattr(InputSource, input_source):
@@ -766,8 +800,9 @@ class App(customtkinter.CTk):
 
     def apply_theme(self):
         try:
-            theme = self.settings.get("theme", "light")
+            theme = self.settings.get("theme", "system")
             if theme in AVAILABLE_THEMES:
+                # "system" tells customtkinter to follow Windows theme
                 customtkinter.set_appearance_mode(theme)
         except Exception as e:
             logging.error(f"Error applying theme: {e}")
@@ -819,6 +854,60 @@ class App(customtkinter.CTk):
             logging.error(f"Failed to remove favorite: {e}")
         return False
 
+    # FIX #6 & #7: Helper methods for favorite dialogs - reduces duplicate code and adds validation
+    
+    def _validate_favorite_name(self, name, exclude_name=None):
+        """
+        FIX #7: Validate favorite name with proper rules.
+        Returns (is_valid, error_message) tuple.
+        
+        Args:
+            name: The name to validate
+            exclude_name: Name to exclude from duplicate check (for edit mode)
+        """
+        if not name:
+            return False, "Please enter a favorite name"
+        
+        # Check length
+        if len(name) > 50:
+            return False, "Name must be 50 characters or less"
+        
+        # Check for invalid characters that could break JSON or cause issues
+        invalid_chars = ['\\', '/', '"', '\n', '\r', '\t']
+        for char in invalid_chars:
+            if char in name:
+                return False, f"Name cannot contain '{char}' character"
+        
+        # Check for duplicates (case-insensitive)
+        for existing_name in self.favorites.keys():
+            if existing_name.lower() == name.lower():
+                if exclude_name is None or existing_name.lower() != exclude_name.lower():
+                    return False, f"A favorite named '{existing_name}' already exists"
+        
+        return True, None
+
+    def _get_inputs_for_monitor(self, monitor_id):
+        """Get available inputs for a given monitor ID."""
+        monitors_list = self.monitors_data if hasattr(self, 'monitors_data') and self.monitors_data else []
+        for mon in monitors_list:
+            if mon.get('id') == monitor_id:
+                return mon.get('inputs', []) or []
+        return []
+
+    def _get_monitor_choices(self):
+        """Get list of monitor choices for dropdowns."""
+        monitors_list = self.monitors_data if hasattr(self, 'monitors_data') and self.monitors_data else []
+        if monitors_list:
+            return [f"{m.get('id')}: {m.get('display_name')}" for m in monitors_list]
+        return ["0"]
+
+    def _parse_monitor_selection(self, selection):
+        """Parse monitor ID from dropdown selection string."""
+        try:
+            return int(selection.split(':', 1)[0].strip()) if ':' in selection else int(selection)
+        except (ValueError, AttributeError):
+            return 0
+
     def switch_to_favorite(self, name):
         try:
             if name not in self.favorites:
@@ -827,14 +916,14 @@ class App(customtkinter.CTk):
             
             monitor_id, input_source = self.favorites[name]
             
-            if monitor_id >= len(monitors):
+            if monitor_id >= len(self.monitors):
                 self.status_label.configure(text=f"❌ Monitor {monitor_id} not found")
                 return False
             
             # Move app if it's on the monitor being switched
             self.move_app_if_on_switching_monitor(monitor_id)
             
-            with monitors[monitor_id] as monitor:
+            with self.monitors[monitor_id] as monitor:
                 if hasattr(InputSource, input_source):
                     input_obj = getattr(InputSource, input_source)
                     monitor.set_input_source(input_obj)
@@ -1068,11 +1157,12 @@ class App(customtkinter.CTk):
         # Track open theme dialog for disabling during refresh
         self.theme_window = theme_window
         theme_window.title("Theme Settings")
-        theme_window.geometry("320x220")
+        theme_window.geometry("320x260")
         theme_window.resizable(False, False)
         theme_window.transient(self)
         theme_window.grab_set()
         theme_window.bind('<Destroy>', lambda e: setattr(self, 'theme_window', None))
+        set_dark_title_bar(theme_window)  # Apply dark title bar if in dark mode
         
         frame = customtkinter.CTkFrame(theme_window)
         frame.pack(fill="both", expand=True, padx=20, pady=20)
@@ -1083,10 +1173,17 @@ class App(customtkinter.CTk):
         current_theme = self.settings.get("theme", "dark")
         theme_var = customtkinter.StringVar(value=current_theme)
         
+        # Theme options with display labels
+        theme_labels = {
+            "dark": "Dark",
+            "light": "Light",
+            "system": "System (follow Windows)"
+        }
+        
         for theme in AVAILABLE_THEMES:
             theme_radio = customtkinter.CTkRadioButton(
                 frame,
-                text=theme.capitalize(),
+                text=theme_labels.get(theme, theme.capitalize()),
                 variable=theme_var,
                 value=theme,
                 font=("Arial", 12)
@@ -1316,6 +1413,7 @@ class App(customtkinter.CTk):
 
         def edit_favorite(name):
             """Open an edit dialog to rename or change monitor/input for a favorite"""
+            # FIX #6: Refactored to use helper methods, reducing duplicate code
             current = self.favorites.get(name)
             if not current:
                 messagebox.showerror("Error", f"Favorite '{name}' not found", parent=manage_window)
@@ -1342,35 +1440,23 @@ class App(customtkinter.CTk):
             name_entry2 = customtkinter.CTkEntry(frm, textvariable=name_var2, height=32)
             name_entry2.grid(row=0, column=1, sticky="ew", pady=(0, 8), padx=(10, 0))
 
-            # Monitor
+            # Monitor - using helper method
             mon_label2 = customtkinter.CTkLabel(frm, text="Monitor:", font=("Arial", 11))
             mon_label2.grid(row=1, column=0, sticky="w", pady=(0, 8))
 
-            monitors_list = self.monitors_data if hasattr(self, 'monitors_data') and self.monitors_data else []
-            mon_choices = [f"{m.get('id')}: {m.get('display_name')}" for m in monitors_list] if monitors_list else ["0"]
+            mon_choices = self._get_monitor_choices()
             default_mon_str = next((s for s in mon_choices if s.startswith(str(monitor_id) + ":")), mon_choices[0])
 
             mon_var2 = customtkinter.StringVar(value=default_mon_str)
             mon_menu2 = customtkinter.CTkOptionMenu(frm, variable=mon_var2, values=mon_choices, height=32)
             mon_menu2.grid(row=1, column=1, sticky="ew", pady=(0, 8), padx=(10, 0))
 
-            # Input
+            # Input - using helper method
             input_label2 = customtkinter.CTkLabel(frm, text="Input:", font=("Arial", 11))
             input_label2.grid(row=2, column=0, sticky="w", pady=(0, 8))
 
-            # Determine inputs for the selected monitor
-            def inputs_for_monitor_id(sel_id):
-                for mon in monitors_list:
-                    if mon.get('id') == sel_id:
-                        return mon.get('inputs', []) or []
-                return []
-
-            try:
-                sel_id_init = int(default_mon_str.split(':', 1)[0].strip()) if ':' in default_mon_str else int(default_mon_str)
-            except Exception:
-                sel_id_init = 0
-
-            inputs_list2 = inputs_for_monitor_id(sel_id_init) or ["DP1", "HDMI1", "DP2", "HDMI2"]
+            sel_id_init = self._parse_monitor_selection(default_mon_str)
+            inputs_list2 = self._get_inputs_for_monitor(sel_id_init) or ["DP1", "HDMI1", "DP2", "HDMI2"]
             input_var2 = customtkinter.StringVar(value=input_source if input_source in inputs_list2 else (inputs_list2[0] if inputs_list2 else "HDMI1"))
             input_menu2 = customtkinter.CTkOptionMenu(frm, variable=input_var2, values=inputs_list2, height=32)
             input_menu2.grid(row=2, column=1, sticky="ew", pady=(0, 8), padx=(10, 0))
@@ -1378,12 +1464,8 @@ class App(customtkinter.CTk):
             frm.grid_columnconfigure(1, weight=1)
 
             def update_input_options2(*args):
-                sel = mon_var2.get()
-                try:
-                    sel_id = int(sel.split(':', 1)[0].strip()) if ':' in sel else int(sel)
-                except Exception:
-                    return
-                new_inputs = inputs_for_monitor_id(sel_id) or ["DP1", "HDMI1", "DP2", "HDMI2"]
+                sel_id = self._parse_monitor_selection(mon_var2.get())
+                new_inputs = self._get_inputs_for_monitor(sel_id) or ["DP1", "HDMI1", "DP2", "HDMI2"]
                 try:
                     input_menu2.configure(values=new_inputs)
                     input_var2.set(new_inputs[0])
@@ -1394,13 +1476,11 @@ class App(customtkinter.CTk):
 
             def save_edit():
                 newname = name_var2.get().strip()
-                if not newname:
-                    messagebox.showerror("Error", "Please enter a favorite name", parent=edit_win)
-                    return
-
-                existing = next((n for n in self.favorites.keys() if n.lower() == newname.lower() and n != name), None)
-                if existing:
-                    messagebox.showerror("Duplicate name", f"A favorite named '{existing}' already exists. Please choose a different name.", parent=edit_win)
+                
+                # FIX #7: Use validation helper method
+                is_valid, error_msg = self._validate_favorite_name(newname, exclude_name=name)
+                if not is_valid:
+                    messagebox.showerror("Validation Error", error_msg, parent=edit_win)
                     try:
                         name_entry2.focus_set()
                         name_entry2.select_range(0, 'end')
@@ -1408,13 +1488,7 @@ class App(customtkinter.CTk):
                         pass
                     return
 
-                sel = mon_var2.get()
-                try:
-                    monitor_id_new = int(sel.split(':', 1)[0].strip()) if ':' in sel else int(sel)
-                except ValueError:
-                    messagebox.showerror("Error", "Invalid monitor selection", parent=edit_win)
-                    return
-
+                monitor_id_new = self._parse_monitor_selection(mon_var2.get())
                 input_new = input_var2.get()
 
                 try:
@@ -1446,6 +1520,7 @@ class App(customtkinter.CTk):
             edit_win.geometry(f"{req_w}x{req_h}")
         
         # Add new favorite section
+        # FIX #6: Refactored to use helper methods, reducing duplicate code
         add_section = customtkinter.CTkFrame(main_frame)
         add_section.pack(fill="x", pady=(0, 0))
         
@@ -1463,22 +1538,22 @@ class App(customtkinter.CTk):
         name_entry = customtkinter.CTkEntry(form_frame, textvariable=name_var, height=32)
         name_entry.grid(row=0, column=1, sticky="ew", pady=(0, 8), padx=(10, 0))
         
-        # Monitor selection
+        # Monitor selection - using helper method
         mon_label = customtkinter.CTkLabel(form_frame, text="Monitor:", font=("Arial", 11))
         mon_label.grid(row=1, column=0, sticky="w", pady=(0, 8))
         
-        monitors_list = self.monitors_data if hasattr(self, 'monitors_data') and self.monitors_data else []
-        mon_choices = [f"{m.get('id')}: {m.get('display_name')}" for m in monitors_list] if monitors_list else ["0"]
+        mon_choices = self._get_monitor_choices()
         
         mon_var = customtkinter.StringVar(value=mon_choices[0])
         mon_menu = customtkinter.CTkOptionMenu(form_frame, variable=mon_var, values=mon_choices, height=32)
         mon_menu.grid(row=1, column=1, sticky="ew", pady=(0, 8), padx=(10, 0))
         
-        # Input selection
+        # Input selection - using helper method
         input_label = customtkinter.CTkLabel(form_frame, text="Input:", font=("Arial", 11))
         input_label.grid(row=2, column=0, sticky="w", pady=(0, 8))
         
-        initial_inputs = monitors_list[0].get('inputs', []) if monitors_list else ["HDMI1", "DP1"]
+        initial_monitor_id = self._parse_monitor_selection(mon_choices[0])
+        initial_inputs = self._get_inputs_for_monitor(initial_monitor_id) or ["HDMI1", "DP1"]
         input_var = customtkinter.StringVar(value=initial_inputs[0] if initial_inputs else "HDMI1")
         input_menu = customtkinter.CTkOptionMenu(form_frame, variable=input_var, values=initial_inputs, height=32)
         input_menu.grid(row=2, column=1, sticky="ew", pady=(0, 8), padx=(10, 0))
@@ -1486,21 +1561,8 @@ class App(customtkinter.CTk):
         form_frame.grid_columnconfigure(1, weight=1)
         
         def update_input_options(*args):
-            sel = mon_var.get()
-            try:
-                sel_id = int(sel.split(':', 1)[0].strip()) if ':' in sel else int(sel)
-            except Exception:
-                return
-            
-            inputs_for_sel = []
-            for mon in monitors_list:
-                if mon.get('id') == sel_id:
-                    inputs_for_sel = mon.get('inputs', []) or []
-                    break
-            
-            if not inputs_for_sel:
-                inputs_for_sel = ["DP1", "HDMI1", "DP2", "HDMI2"]
-            
+            sel_id = self._parse_monitor_selection(mon_var.get())
+            inputs_for_sel = self._get_inputs_for_monitor(sel_id) or ["DP1", "HDMI1", "DP2", "HDMI2"]
             input_menu.configure(values=inputs_for_sel)
             input_var.set(inputs_for_sel[0])
         
@@ -1508,14 +1570,11 @@ class App(customtkinter.CTk):
         
         def add_fav():
             name = name_var.get().strip()
-            if not name:
-                messagebox.showerror("Error", "Please enter a favorite name", parent=manage_window)
-                return
-
-            # Enforce unique favorite names (case-insensitive)
-            existing = next((n for n in self.favorites.keys() if n.lower() == name.lower()), None)
-            if existing:
-                messagebox.showerror("Duplicate name", f"A favorite named '{existing}' already exists. Please choose a different name.", parent=manage_window)
+            
+            # FIX #7: Use validation helper method
+            is_valid, error_msg = self._validate_favorite_name(name)
+            if not is_valid:
+                messagebox.showerror("Validation Error", error_msg, parent=manage_window)
                 try:
                     name_entry.focus_set()
                     name_entry.select_range(0, 'end')
@@ -1523,13 +1582,7 @@ class App(customtkinter.CTk):
                     pass
                 return
             
-            sel = mon_var.get()
-            try:
-                monitor_id = int(sel.split(':', 1)[0].strip()) if ':' in sel else int(sel)
-            except ValueError:
-                messagebox.showerror("Error", "Invalid monitor selection", parent=manage_window)
-                return
-            
+            monitor_id = self._parse_monitor_selection(mon_var.get())
             input_source = input_var.get()
             
             if self.add_favorite(name, monitor_id, input_source):
@@ -1655,17 +1708,30 @@ class App(customtkinter.CTk):
             dialog.geometry("350x150")
             dialog.transient(editor_window)
             dialog.grab_set()
+            set_dark_title_bar(dialog)  # Apply dark title bar if in dark mode
             
             label = customtkinter.CTkLabel(dialog, text="Press the desired key combination...", font=("Arial", 12))
             label.pack(pady=30)
             
             recorded_keys = []
             
+            # FIX #3: Track the keyboard hook so we can unhook it when dialog closes
+            hook_handle = [None]  # Use list to allow modification in nested function
+            
             # Map of characters to their scan codes for number keys
             char_to_key = {
                 '@': '2', '!': '1', '#': '3', '$': '4', '%': '5',
                 '^': '6', '&': '7', '*': '8', '(': '9', ')': '0'
             }
+            
+            def cleanup_hook():
+                """Remove the keyboard hook to prevent memory leaks"""
+                if hook_handle[0] is not None:
+                    try:
+                        keyboard.unhook(hook_handle[0])
+                    except Exception:
+                        pass
+                    hook_handle[0] = None
             
             def on_key(event):
                 if event.name not in recorded_keys and event.name not in ['ctrl', 'alt', 'shift']:
@@ -1679,12 +1745,17 @@ class App(customtkinter.CTk):
                     label.configure(text=f"Recorded: {shortcut}\n\nPress ENTER to confirm or ESC to cancel")
                     
                     if event.name == 'enter':
+                        cleanup_hook()
                         dialog.destroy()
                         callback('+'.join(recorded_keys[:-1]))
                     elif event.name == 'esc':
+                        cleanup_hook()
                         dialog.destroy()
             
-            keyboard.on_press(on_key)
+            hook_handle[0] = keyboard.on_press(on_key)
+            
+            # FIX #3: Also cleanup if user closes dialog via window X button
+            dialog.protocol("WM_DELETE_WINDOW", lambda: (cleanup_hook(), dialog.destroy()))
             
         def add_new_shortcut():
             def on_shortcut(shortcut):
@@ -1694,6 +1765,7 @@ class App(customtkinter.CTk):
                     select_dialog.geometry("400x280")
                     select_dialog.transient(editor_window)
                     select_dialog.grab_set()
+                    set_dark_title_bar(select_dialog)  # Apply dark title bar if in dark mode
 
                     frame = customtkinter.CTkFrame(select_dialog)
                     frame.pack(fill="both", expand=True, padx=20, pady=20)
@@ -1879,14 +1951,17 @@ def get_input_name(code):
         16: "DP2",
         17: "HDMI1",
         18: "HDMI2",
-        26: "THUNDERBOLT",
-        27: "USB-C"
+        VCP_INPUT_THUNDERBOLT: "THUNDERBOLT",
+        VCP_INPUT_USB_C: "USB-C"
     }
     
     return standard_inputs.get(code, f"UNKNOWN CODE {code}")
 
 def cli_switch_input(monitor_index, input_name):
     """Switch input via command line interface"""
+    # FIX #2: Get monitors fresh for CLI mode (not using global variable)
+    monitors = get_monitors()
+    
     try:
         if not monitors:
             print("Error: No monitors found")
