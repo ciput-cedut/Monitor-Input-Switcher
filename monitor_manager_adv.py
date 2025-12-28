@@ -116,6 +116,90 @@ MODEL_BRAND_MAP = {
 # Monitors are now refreshed dynamically in get_all_monitor_data() to detect
 # newly connected/disconnected monitors.
 
+# ===== RESPONSIVE SCALING SYSTEM =====
+# Base values designed for 1080p (1920x1080) at 96 DPI
+BASE_SCREEN_HEIGHT = 1080
+BASE_DPI = 96
+
+class UIScaler:
+    """
+    Calculates responsive UI scaling based on screen resolution and DPI.
+    All sizes are relative to a 1080p baseline.
+    Supports dynamic DPI changes when moving between monitors.
+    """
+    def __init__(self, root):
+        self.root = root
+        self._last_dpi = None
+        self._calculate_scale_factors()
+    
+    def _calculate_scale_factors(self):
+        """Calculate scaling factors based on screen metrics."""
+        try:
+            # Get screen dimensions
+            screen_height = self.root.winfo_screenheight()
+            
+            # Get DPI (pixels per inch) - this reflects the current monitor's DPI
+            dpi = self.root.winfo_fpixels('1i')
+            self._last_dpi = dpi
+            
+            # Calculate scale factors
+            # Resolution scale: how much bigger/smaller than 1080p
+            self.resolution_scale = screen_height / BASE_SCREEN_HEIGHT
+            
+            # DPI scale: how much higher/lower than standard 96 DPI
+            self.dpi_scale = dpi / BASE_DPI
+            
+            # Combined scale factor (weighted average)
+            # Use DPI scale as primary, with resolution as secondary factor
+            self.scale = (self.dpi_scale * 0.7) + (self.resolution_scale * 0.3)
+            
+            # Clamp scale to reasonable bounds (0.75x to 2.0x)
+            self.scale = max(0.75, min(2.0, self.scale))
+            
+        except Exception:
+            # Fallback to 1.0 scale if detection fails
+            self.scale = 1.0
+            self.resolution_scale = 1.0
+            self.dpi_scale = 1.0
+            self._last_dpi = BASE_DPI
+    
+    def check_dpi_change(self):
+        """
+        Check if DPI has changed (e.g., window moved to different monitor).
+        Returns True if DPI changed and scaling was recalculated.
+        """
+        try:
+            current_dpi = self.root.winfo_fpixels('1i')
+            if self._last_dpi is not None and abs(current_dpi - self._last_dpi) > 1:
+                self._calculate_scale_factors()
+                return True
+        except Exception:
+            pass
+        return False
+    
+    def size(self, base_value):
+        """Scale a size value (width, height, padding, etc.)."""
+        return int(base_value * self.scale)
+    
+    def font_size(self, base_size):
+        """Scale a font size with slightly conservative scaling."""
+        # Fonts scale a bit less aggressively to maintain readability
+        font_scale = (self.scale - 1.0) * 0.8 + 1.0
+        return int(base_size * font_scale)
+    
+    def font(self, family, size, weight=""):
+        """Return a scaled font tuple."""
+        scaled_size = self.font_size(size)
+        if weight:
+            return (family, scaled_size, weight)
+        return (family, scaled_size)
+    
+    def window_size(self, base_width, base_height):
+        """Calculate scaled window dimensions as a geometry string."""
+        width = self.size(base_width)
+        height = self.size(base_height)
+        return f"{width}x{height}"
+
 def resource_path(relative_path):
     try:
         base_path = sys._MEIPASS
@@ -127,8 +211,21 @@ class App(customtkinter.CTk):
     def __init__(self):
         super().__init__()
 
+        # Initialize UI scaler for responsive sizing
+        self.ui = UIScaler(self)
+        
+        # Apply CustomTkinter's built-in scaling for all widgets
+        # This ensures consistent sizing across different DPI displays
+        customtkinter.set_widget_scaling(self.ui.scale)
+        customtkinter.set_window_scaling(self.ui.scale)
+        
+        # Track last known window position for DPI change detection
+        self._last_x = 0
+        self._last_y = 0
+        self._dpi_check_scheduled = False
+
         self.title("Monitor Manager")
-        self.geometry("520x540")
+        self.geometry(self.ui.window_size(520, 540))
         self.resizable(True, True)  # Allow window resizing
         
         try:
@@ -146,6 +243,9 @@ class App(customtkinter.CTk):
         # Override window close behavior and minimize behavior
         self.protocol("WM_DELETE_WINDOW", self.minimize_to_tray)
         self.bind("<Unmap>", self.on_minimize)
+        
+        # Bind Configure event to detect when window moves (for DPI change detection)
+        self.bind("<Configure>", self._on_window_configure)
 
         # Configuration paths
         config_dir = get_user_config_dir()
@@ -180,31 +280,31 @@ class App(customtkinter.CTk):
 
         # ===== MAIN CONTAINER =====
         main_container = customtkinter.CTkFrame(self, fg_color="transparent")
-        main_container.pack(fill="both", expand=True, padx=15, pady=10)
+        main_container.pack(fill="both", expand=True, padx=self.ui.size(15), pady=self.ui.size(10))
 
         # ===== HEADER =====
-        header = customtkinter.CTkFrame(main_container, height=50)
-        header.pack(fill="x", pady=(0, 12))
+        header = customtkinter.CTkFrame(main_container, height=self.ui.size(50))
+        header.pack(fill="x", pady=(0, self.ui.size(12)))
         header.pack_propagate(False)
         
         title_label = customtkinter.CTkLabel(
             header, 
             text="Monitor Input Switcher", 
-            font=("Arial", 20, "bold")
+            font=self.ui.font("Arial", 20, "bold")
         )
-        title_label.pack(side="left", padx=10, pady=10)
+        title_label.pack(side="left", padx=self.ui.size(10), pady=self.ui.size(10))
 
         # Theme and Settings buttons in header
         btn_frame = customtkinter.CTkFrame(header, fg_color="transparent")
-        btn_frame.pack(side="right", padx=10)
+        btn_frame.pack(side="right", padx=self.ui.size(10))
         
         self.theme_button = customtkinter.CTkButton(
             btn_frame, 
             text="🎨", 
             command=self.show_theme_settings,
-            width=35,
-            height=35,
-            font=("Arial", 16)
+            width=self.ui.size(35),
+            height=self.ui.size(35),
+            font=self.ui.font("Arial", 16)
         )
         self.theme_button.pack(side="right", padx=2)
         
@@ -213,9 +313,9 @@ class App(customtkinter.CTk):
             text="⌨", 
             command=self.show_shortcuts_editor,
             state="disabled",
-            width=35,
-            height=35,
-            font=("Arial", 16)
+            width=self.ui.size(35),
+            height=self.ui.size(35),
+            font=self.ui.font("Arial", 16)
         )
         self.shortcuts_button.pack(side="right", padx=2)
 
@@ -224,9 +324,9 @@ class App(customtkinter.CTk):
             btn_frame,
             text="⚙",  # Gear icon for settings
             command=self.show_settings,
-            width=35,
-            height=35,
-            font=("Arial", 16)
+            width=self.ui.size(35),
+            height=self.ui.size(35),
+            font=self.ui.font("Arial", 16)
             )
         self.settings_button.pack(side="right", padx=2)
 
@@ -239,15 +339,15 @@ class App(customtkinter.CTk):
 
         # ===== MONITOR SELECTION CARD =====
         monitor_card = customtkinter.CTkFrame(main_container)
-        monitor_card.pack(fill="x", pady=(0, 10))
+        monitor_card.pack(fill="x", pady=(0, self.ui.size(10)))
         
         monitor_header = customtkinter.CTkFrame(monitor_card, fg_color="transparent")
-        monitor_header.pack(fill="x", padx=12, pady=(12, 8))
+        monitor_header.pack(fill="x", padx=self.ui.size(12), pady=(self.ui.size(12), self.ui.size(8)))
         
         self.monitor_label = customtkinter.CTkLabel(
             monitor_header, 
             text="📺 Select Monitor", 
-            font=("Arial", 13, "bold")
+            font=self.ui.font("Arial", 13, "bold")
         )
         self.monitor_label.pack(side="left")
         
@@ -255,9 +355,9 @@ class App(customtkinter.CTk):
             monitor_header, 
             text="Refresh🔄",
             command=self.refresh_monitors,
-            width=30,
-            height=28,
-            font=("Arial", 14)
+            width=self.ui.size(30),
+            height=self.ui.size(28),
+            font=self.ui.font("Arial", 14)
         )
         self.refresh_button.pack(side="right")
 
@@ -265,43 +365,43 @@ class App(customtkinter.CTk):
             monitor_card, 
             values=["Loading..."],
             command=self.update_inputs,
-            height=32,
-            font=("Arial", 12)
+            height=self.ui.size(32),
+            font=self.ui.font("Arial", 12)
         )
         self.monitor_menu.set("Loading...")
-        self.monitor_menu.pack(fill="x", padx=12, pady=(0, 12))
+        self.monitor_menu.pack(fill="x", padx=self.ui.size(12), pady=(0, self.ui.size(12)))
 
         # ===== INPUT SOURCE CARD =====
         input_card = customtkinter.CTkFrame(main_container)
-        input_card.pack(fill="x", pady=(0, 10))
+        input_card.pack(fill="x", pady=(0, self.ui.size(10)))
         
         self.input_label = customtkinter.CTkLabel(
             input_card, 
             text="🔌 Select Input Source", 
-            font=("Arial", 13, "bold")
+            font=self.ui.font("Arial", 13, "bold")
         )
-        self.input_label.pack(anchor="w", padx=12, pady=(12, 8))
+        self.input_label.pack(anchor="w", padx=self.ui.size(12), pady=(self.ui.size(12), self.ui.size(8)))
 
         self.input_menu = customtkinter.CTkOptionMenu(
             input_card, 
             values=["Loading..."],
-            height=32,
-            font=("Arial", 12)
+            height=self.ui.size(32),
+            font=self.ui.font("Arial", 12)
         )
         self.input_menu.set("Loading...")
-        self.input_menu.pack(fill="x", padx=12, pady=(0, 12))
+        self.input_menu.pack(fill="x", padx=self.ui.size(12), pady=(0, self.ui.size(12)))
 
         # ===== SWITCH BUTTON =====
         self.switch_button = customtkinter.CTkButton(
             main_container,
             text="⚡ Switch Input",
             command=self.switch_input,
-            height=42,
-            font=("Arial", 14, "bold"),
+            height=self.ui.size(42),
+            font=self.ui.font("Arial", 14, "bold"),
             fg_color=("#2B7A0B", "#5FB041"),
             hover_color=("#246A09", "#52A038")
         )
-        self.switch_button.pack(fill="x", pady=(0, 10))
+        self.switch_button.pack(fill="x", pady=(0, self.ui.size(10)))
 
         # Progress bar (hidden by default)
         self.progress_bar = customtkinter.CTkProgressBar(main_container, mode='indeterminate')
@@ -309,15 +409,15 @@ class App(customtkinter.CTk):
         # ===== FAVORITES SECTION =====
         favorites_card = customtkinter.CTkFrame(main_container)
         # Don't expand by default; will grow when favorites are added
-        favorites_card.pack(fill="x", expand=False, pady=(0, 10))
+        favorites_card.pack(fill="x", expand=False, pady=(0, self.ui.size(10)))
         
         fav_header = customtkinter.CTkFrame(favorites_card, fg_color="transparent")
-        fav_header.pack(fill="x", padx=12, pady=(12, 8))
+        fav_header.pack(fill="x", padx=self.ui.size(12), pady=(self.ui.size(12), self.ui.size(8)))
         
         self.favorites_label = customtkinter.CTkLabel(
             fav_header, 
             text="⭐ Quick Favorites", 
-            font=("Arial", 13, "bold")
+            font=self.ui.font("Arial", 13, "bold")
         )
         self.favorites_label.pack(side="left")
 
@@ -326,9 +426,9 @@ class App(customtkinter.CTk):
             text="+ Manage",
             command=self.show_manage_favorites,
             state="disabled",
-            width=80,
-            height=26,
-            font=("Arial", 11)
+            width=self.ui.size(80),
+            height=self.ui.size(26),
+            font=self.ui.font("Arial", 11)
         )
         self.manage_favorites_btn.pack(side="right")
 
@@ -336,32 +436,32 @@ class App(customtkinter.CTk):
         self.favorites_scroll = customtkinter.CTkFrame(
             favorites_card,
             fg_color="transparent",
-            height=40
+            height=self.ui.size(40)
         )
-        self.favorites_scroll.pack(fill="x", expand=False, padx=12, pady=(0, 12))
+        self.favorites_scroll.pack(fill="x", expand=False, padx=self.ui.size(12), pady=(0, self.ui.size(12)))
         self.favorites_scroll.pack_propagate(False)
 
         # ===== STATUS BAR =====
-        status_frame = customtkinter.CTkFrame(main_container, height=40)
+        status_frame = customtkinter.CTkFrame(main_container, height=self.ui.size(40))
         status_frame.pack(fill="x", pady=(0, 0))
         status_frame.pack_propagate(False)
         
         self.status_label = customtkinter.CTkLabel(
             status_frame,
             text="Ready",
-            font=("Arial", 11),
-            wraplength=480
+            font=self.ui.font("Arial", 11),
+            wraplength=self.ui.size(480)
         )
-        self.status_label.pack(pady=8)
+        self.status_label.pack(pady=self.ui.size(8))
 
         # ===== FOOTER =====
         footer = customtkinter.CTkLabel(
             main_container,
             text="By: LuqmanHakimAmiruddin@PDC",
-            font=("Arial", 9),
+            font=self.ui.font("Arial", 9),
             text_color="gray"
         )
-        footer.pack(pady=(5, 0))
+        footer.pack(pady=(self.ui.size(5), 0))
 
         # Start initial refresh
         self.after(100, self.refresh_monitors)
@@ -702,8 +802,10 @@ class App(customtkinter.CTk):
                 monitor.set_input_source(new_input)
             logging.info(f"Input name after: {new_input}")
 
-            self.status_label.configure(text=f"✅ Switched to {new_input_str}")
-            logging.info(f"Successfully switched to {new_input_str}")
+            # Include monitor brand/model in status message
+            monitor_name = self.selected_monitor_data.get('display_name', f'Monitor {selected_monitor_id}')
+            self.status_label.configure(text=f"✅ {monitor_name}: Switched to {new_input_str}")
+            logging.info(f"Successfully switched {monitor_name} to {new_input_str}")
 
         except Exception as e:
             self.status_label.configure(text=f"❌ Error: {str(e)[:50]}")
@@ -726,6 +828,13 @@ class App(customtkinter.CTk):
         """Handle global hotkey press"""
         try:
             if monitor_id < len(self.monitors):
+                # Get monitor display name (brand - model)
+                monitor_name = f"Monitor {monitor_id}"
+                for data in self.monitors_data:
+                    if data.get('id') == monitor_id:
+                        monitor_name = data.get('display_name', monitor_name)
+                        break
+                
                 # Move app if it's on the monitor being switched
                 self.move_app_if_on_switching_monitor(monitor_id)
                 
@@ -744,8 +853,8 @@ class App(customtkinter.CTk):
                         return
                     
                     monitor.set_input_source(input_obj)
-                    self.status_label.configure(text=f"✅ Hotkey: Switched to {input_source}")
-                    logging.info(f"Hotkey: Switched monitor {monitor_id} to {input_source}")
+                    self.status_label.configure(text=f"✅ {monitor_name}: Switched to {input_source}")
+                    logging.info(f"Hotkey: Switched {monitor_name} to {input_source}")
         except Exception as e:
             self.status_label.configure(text=f"❌ Hotkey error: {str(e)[:40]}")
             logging.error(f"Hotkey error: {e}")
@@ -865,12 +974,15 @@ class App(customtkinter.CTk):
             name: The name to validate
             exclude_name: Name to exclude from duplicate check (for edit mode)
         """
+        # Maximum characters allowed for favorite name (keeps UI buttons visible)
+        MAX_FAVORITE_NAME_LENGTH = 20
+        
         if not name:
             return False, "Please enter a favorite name"
         
-        # Check length
-        if len(name) > 50:
-            return False, "Name must be 50 characters or less"
+        # Check length - reduced to keep edit/delete buttons visible in UI
+        if len(name) > MAX_FAVORITE_NAME_LENGTH:
+            return False, f"Name must be {MAX_FAVORITE_NAME_LENGTH} characters or less"
         
         # Check for invalid characters that could break JSON or cause issues
         invalid_chars = ['\\', '/', '"', '\n', '\r', '\t']
@@ -908,6 +1020,42 @@ class App(customtkinter.CTk):
         except (ValueError, AttributeError):
             return 0
 
+    def _center_dialog_on_parent(self, dialog, parent, width=None, height=None):
+        """
+        Center a dialog window on its parent window.
+        Works correctly across multiple monitors with different positions.
+        
+        Args:
+            dialog: The dialog window to center
+            parent: The parent window to center on
+            width: Optional base width (will be scaled and use dialog's requested width if not specified)
+            height: Optional base height (will be scaled and use dialog's requested height if not specified)
+        """
+        dialog.update_idletasks()  # Ensure geometry is calculated
+        
+        # Scale the provided dimensions, or use dialog's requested size
+        dlg_width = self.ui.size(width) if width else dialog.winfo_reqwidth()
+        dlg_height = self.ui.size(height) if height else dialog.winfo_reqheight()
+        
+        # Get parent's absolute position on the virtual screen (includes multi-monitor offset)
+        # winfo_rootx/rooty give the absolute position including window decorations
+        parent_x = parent.winfo_rootx()
+        parent_y = parent.winfo_rooty()
+        parent_width = parent.winfo_width()
+        parent_height = parent.winfo_height()
+        
+        # Calculate center position relative to parent
+        # This will correctly position on whatever monitor the parent is on
+        x = parent_x + (parent_width - dlg_width) // 2
+        y = parent_y + (parent_height - dlg_height) // 2
+        
+        # Don't clamp to primary screen bounds - allow positioning on any monitor
+        # Just ensure dialog doesn't go off the top-left edge
+        x = max(0, x)
+        y = max(0, y)
+        
+        dialog.geometry(f"{dlg_width}x{dlg_height}+{x}+{y}")
+
     def switch_to_favorite(self, name):
         try:
             if name not in self.favorites:
@@ -920,6 +1068,13 @@ class App(customtkinter.CTk):
                 self.status_label.configure(text=f"❌ Monitor {monitor_id} not found")
                 return False
             
+            # Get monitor display name (brand - model)
+            monitor_name = f"Monitor {monitor_id}"
+            for data in self.monitors_data:
+                if data.get('id') == monitor_id:
+                    monitor_name = data.get('display_name', monitor_name)
+                    break
+            
             # Move app if it's on the monitor being switched
             self.move_app_if_on_switching_monitor(monitor_id)
             
@@ -927,8 +1082,8 @@ class App(customtkinter.CTk):
                 if hasattr(InputSource, input_source):
                     input_obj = getattr(InputSource, input_source)
                     monitor.set_input_source(input_obj)
-                    self.status_label.configure(text=f"✅ Switched to '{name}'")
-                    logging.info(f"Switched to favorite '{name}'")
+                    self.status_label.configure(text=f"✅ {monitor_name}: Switched to '{name}'")
+                    logging.info(f"Switched {monitor_name} to favorite '{name}'")
                     return True
         except Exception as e:
             self.status_label.configure(text=f"❌ Error: {str(e)[:40]}")
@@ -969,11 +1124,11 @@ class App(customtkinter.CTk):
                 self.favorites_scroll,
                 text="Click 'Manage' to add favorites",
                 text_color="gray",
-                font=("Arial", 10)
+                font=self.ui.font("Arial", 10)
             )
-            no_fav.pack(pady=8)
+            no_fav.pack(pady=self.ui.size(8))
             # Keep minimal height when empty
-            self.favorites_scroll.configure(height=40)
+            self.favorites_scroll.configure(height=self.ui.size(40))
             return
         
         # Layout favorites in a responsive grid
@@ -987,10 +1142,10 @@ class App(customtkinter.CTk):
                 self.favorites_scroll,
                 text=fav_name,
                 command=lambda n=fav_name: self.switch_to_favorite(n),
-                height=36,
-                font=("Arial", 11)
+                height=self.ui.size(36),
+                font=self.ui.font("Arial", 11)
             )
-            fav_btn.grid(row=row, column=col, padx=6, pady=6, sticky="ew")
+            fav_btn.grid(row=row, column=col, padx=self.ui.size(6), pady=self.ui.size(6), sticky="ew")
 
             col += 1
             if col >= max_cols:
@@ -1000,8 +1155,8 @@ class App(customtkinter.CTk):
         # Calculate and set appropriate height based on number of rows
         rows = row + (1 if col > 0 else 0)
         rows = max(1, rows)
-        per_row_height = 48
-        new_height = 20 + rows * per_row_height
+        per_row_height = self.ui.size(48)
+        new_height = self.ui.size(20) + rows * per_row_height
         self.favorites_scroll.configure(height=new_height)
 
         # Configure column weights for equal sizing
@@ -1018,24 +1173,24 @@ class App(customtkinter.CTk):
         self.settings_window = settings_window
         settings_window.title("Settings")
         # Slightly larger window to accommodate increased font sizes
-        settings_window.geometry("460x420")
         settings_window.resizable(False, False)
         settings_window.transient(self)
         settings_window.grab_set()
+        self._center_dialog_on_parent(settings_window, self, 460, 420)
         # Clear reference when window is destroyed
         settings_window.bind('<Destroy>', lambda e: setattr(self, 'settings_window', None))
         
         frame = customtkinter.CTkFrame(settings_window)
-        frame.pack(fill="both", expand=True, padx=20, pady=20)
+        frame.pack(fill="both", expand=True, padx=self.ui.size(20), pady=self.ui.size(20))
         
-        label = customtkinter.CTkLabel(frame, text="⚙️ Tray Settings", font=("Arial", 16, "bold"))
-        label.pack(pady=(0, 10))
+        label = customtkinter.CTkLabel(frame, text="⚙️ Tray Settings", font=self.ui.font("Arial", 16, "bold"))
+        label.pack(pady=(0, self.ui.size(10)))
         
         # System Tray Behavior
         tray_frame = customtkinter.CTkFrame(frame, fg_color="transparent")
-        tray_frame.pack(fill="x", pady=5)
+        tray_frame.pack(fill="x", pady=self.ui.size(5))
         
-        tray_title = customtkinter.CTkLabel(tray_frame, text=" Window Behavior", font=("Arial", 14, "bold"))
+        tray_title = customtkinter.CTkLabel(tray_frame, text=" Window Behavior", font=self.ui.font("Arial", 14, "bold"))
         tray_title.pack(anchor="w", pady=(0, 3))
         
         # Pick readable text colors based on current appearance mode
@@ -1046,10 +1201,10 @@ class App(customtkinter.CTk):
         tray_desc = customtkinter.CTkLabel(
             tray_frame, 
             text="Choose what happens when you minimize or close the window:", 
-            font=("Arial", 11),
+            font=self.ui.font("Arial", 11),
             text_color=normal_text_color
         )
-        tray_desc.pack(anchor="w", pady=(0, 10))
+        tray_desc.pack(anchor="w", pady=(0, self.ui.size(10)))
         
         # Default to normal (no system tray) behavior when settings missing
         tray_on = self.settings.get("tray_on", "none")
@@ -1099,23 +1254,23 @@ class App(customtkinter.CTk):
         note_icon = customtkinter.CTkLabel(
             note_frame,
             text="💡",
-            font=("Arial", 14)
+            font=self.ui.font("Arial", 14)
         )
-        note_icon.pack(side="left", padx=(10, 5), pady=8)
+        note_icon.pack(side="left", padx=(self.ui.size(10), self.ui.size(5)), pady=self.ui.size(8))
         
         note_text = customtkinter.CTkLabel(
             note_frame,
             text="When hidden in tray, right-click the tray icon to show or quit",
-            font=("Arial", 11, "bold"),
+            font=self.ui.font("Arial", 11, "bold"),
             justify="left",
-            wraplength=360,
+            wraplength=self.ui.size(360),
             text_color=note_text_color
         )
-        note_text.pack(side="left", padx=(5, 10), pady=8)
+        note_text.pack(side="left", padx=(self.ui.size(5), self.ui.size(10)), pady=self.ui.size(8))
 
         # Save / Cancel buttons for settings (centered)
         btn_frame = customtkinter.CTkFrame(frame, fg_color="transparent")
-        btn_frame.pack(fill="x", pady=(12, 0))
+        btn_frame.pack(fill="x", pady=(self.ui.size(12), 0))
 
         def save_and_apply_settings():
             # Update and persist tray setting, then show confirmation
@@ -1141,15 +1296,15 @@ class App(customtkinter.CTk):
             center_frame,
             text="Cancel",
             command=settings_window.destroy,
-            height=36,
-            width=110,
+            height=self.ui.size(36),
+            width=self.ui.size(110),
             fg_color=("#D32F2F", "#C62828"),
             hover_color=("#C62828", "#B71C1C")
         )
-        cancel_btn.pack(side="left", padx=8)
+        cancel_btn.pack(side="left", padx=self.ui.size(8))
 
-        save_btn = customtkinter.CTkButton(center_frame, text="Save", command=save_and_apply_settings, height=36, width=110)
-        save_btn.pack(side="left", padx=8)
+        save_btn = customtkinter.CTkButton(center_frame, text="Save", command=save_and_apply_settings, height=self.ui.size(36), width=self.ui.size(110))
+        save_btn.pack(side="left", padx=self.ui.size(8))
 
     def show_theme_settings(self):
         """Show theme settings dialog"""
@@ -1157,18 +1312,18 @@ class App(customtkinter.CTk):
         # Track open theme dialog for disabling during refresh
         self.theme_window = theme_window
         theme_window.title("Theme Settings")
-        theme_window.geometry("320x260")
         theme_window.resizable(False, False)
         theme_window.transient(self)
         theme_window.grab_set()
+        self._center_dialog_on_parent(theme_window, self, 320, 260)
         theme_window.bind('<Destroy>', lambda e: setattr(self, 'theme_window', None))
         set_dark_title_bar(theme_window)  # Apply dark title bar if in dark mode
         
         frame = customtkinter.CTkFrame(theme_window)
-        frame.pack(fill="both", expand=True, padx=20, pady=20)
+        frame.pack(fill="both", expand=True, padx=self.ui.size(20), pady=self.ui.size(20))
         
-        title = customtkinter.CTkLabel(frame, text="🎨 Application Theme", font=("Arial", 16, "bold"))
-        title.pack(pady=(0, 20))
+        title = customtkinter.CTkLabel(frame, text="🎨 Application Theme", font=self.ui.font("Arial", 16, "bold"))
+        title.pack(pady=(0, self.ui.size(20)))
         
         current_theme = self.settings.get("theme", "dark")
         theme_var = customtkinter.StringVar(value=current_theme)
@@ -1186,13 +1341,13 @@ class App(customtkinter.CTk):
                 text=theme_labels.get(theme, theme.capitalize()),
                 variable=theme_var,
                 value=theme,
-                font=("Arial", 12)
+                font=self.ui.font("Arial", 12)
             )
-            theme_radio.pack(anchor="w", padx=20, pady=8)
+            theme_radio.pack(anchor="w", padx=self.ui.size(20), pady=self.ui.size(8))
         
         # Save / Cancel buttons centered with spacing like the Window Behavior setting
         btn_frame = customtkinter.CTkFrame(frame, fg_color="transparent")
-        btn_frame.pack(fill="x", pady=(12, 0))
+        btn_frame.pack(fill="x", pady=(self.ui.size(12), 0))
 
         def apply_settings():
             self.settings["theme"] = theme_var.get()
@@ -1209,23 +1364,23 @@ class App(customtkinter.CTk):
             center_frame,
             text="Cancel",
             command=theme_window.destroy,
-            height=36,
-            width=110,
+            height=self.ui.size(36),
+            width=self.ui.size(110),
             fg_color=("#D32F2F", "#C62828"),
             hover_color=("#C62828", "#B71C1C")
         )
-        cancel_btn.pack(side="left", padx=8)
+        cancel_btn.pack(side="left", padx=self.ui.size(8))
 
         apply_btn = customtkinter.CTkButton(
             center_frame,
             text="Apply",
             command=apply_settings,
-            height=36,
-            width=110,
+            height=self.ui.size(36),
+            width=self.ui.size(110),
             fg_color=("#2B7A0B", "#5FB041"),
             hover_color=("#246A09", "#52A038")
         )
-        apply_btn.pack(side="left", padx=8)
+        apply_btn.pack(side="left", padx=self.ui.size(8))
 
     def update_tray_setting(self):
         """Update system tray behavior setting"""
@@ -1294,6 +1449,38 @@ class App(customtkinter.CTk):
             if tray_on in ["minimize", "both"]:
                 self.after(10, self.minimize_to_tray)
     
+    def _on_window_configure(self, event):
+        """
+        Handle window configuration changes (move, resize).
+        Checks if window moved to a different monitor with different DPI.
+        """
+        # Only process events for the main window, not child widgets
+        if event.widget != self:
+            return
+        
+        # Check if window position changed significantly (moved to different area)
+        x, y = self.winfo_x(), self.winfo_y()
+        if abs(x - self._last_x) > 50 or abs(y - self._last_y) > 50:
+            self._last_x, self._last_y = x, y
+            
+            # Debounce DPI check to avoid excessive recalculations during drag
+            if not self._dpi_check_scheduled:
+                self._dpi_check_scheduled = True
+                self.after(500, self._check_and_apply_dpi_change)
+    
+    def _check_and_apply_dpi_change(self):
+        """Check if DPI changed and re-apply scaling if needed."""
+        self._dpi_check_scheduled = False
+        
+        if self.ui.check_dpi_change():
+            # DPI changed - update CustomTkinter's scaling
+            logging.info(f"DPI change detected. New scale: {self.ui.scale:.2f}")
+            customtkinter.set_widget_scaling(self.ui.scale)
+            customtkinter.set_window_scaling(self.ui.scale)
+            
+            # Update status to inform user
+            self.status_label.configure(text=f"🖥️ Display scaling updated ({self.ui.scale:.0%})")
+    
     def show_window(self, icon=None, item=None):
         """Show the main window from system tray"""
         self.deiconify()  # Show the window
@@ -1317,6 +1504,7 @@ class App(customtkinter.CTk):
         manage_window.resizable(False, False)
         manage_window.transient(self)
         manage_window.grab_set()
+        self._center_dialog_on_parent(manage_window, self, 450, 500)
         manage_window.bind('<Destroy>', lambda e: setattr(self, 'manage_window', None))
         
         main_frame = customtkinter.CTkFrame(manage_window)
@@ -1429,6 +1617,7 @@ class App(customtkinter.CTk):
             edit_win.transient(manage_window)
             edit_win.grab_set()
             edit_win.resizable(False, False)
+            self._center_dialog_on_parent(edit_win, manage_window, 350, 220)
 
             frm = customtkinter.CTkFrame(edit_win)
             frm.pack(fill="both", expand=True, padx=12, pady=12)
@@ -1437,6 +1626,14 @@ class App(customtkinter.CTk):
             name_label2 = customtkinter.CTkLabel(frm, text="Name:", font=("Arial", 11))
             name_label2.grid(row=0, column=0, sticky="w", pady=(0, 8))
             name_var2 = customtkinter.StringVar(value=name)
+            
+            # Limit name entry to 20 characters
+            def limit_name_length2(*args):
+                value = name_var2.get()
+                if len(value) > 20:
+                    name_var2.set(value[:20])
+            name_var2.trace_add('write', limit_name_length2)
+            
             name_entry2 = customtkinter.CTkEntry(frm, textvariable=name_var2, height=32)
             name_entry2.grid(row=0, column=1, sticky="ew", pady=(0, 8), padx=(10, 0))
 
@@ -1535,6 +1732,14 @@ class App(customtkinter.CTk):
         name_label.grid(row=0, column=0, sticky="w", pady=(0, 8))
         
         name_var = customtkinter.StringVar(value="My Setup")
+        
+        # Limit name entry to 20 characters
+        def limit_name_length(*args):
+            value = name_var.get()
+            if len(value) > 20:
+                name_var.set(value[:20])
+        name_var.trace_add('write', limit_name_length)
+        
         name_entry = customtkinter.CTkEntry(form_frame, textvariable=name_var, height=32)
         name_entry.grid(row=0, column=1, sticky="ew", pady=(0, 8), padx=(10, 0))
         
@@ -1604,10 +1809,10 @@ class App(customtkinter.CTk):
         # Track this editor window so it can be disabled during refresh
         self.editor_window = editor_window
         editor_window.title("Keyboard Shortcuts")
-        editor_window.geometry("520x600")
         editor_window.resizable(False, False)
         editor_window.transient(self)
         editor_window.grab_set()
+        self._center_dialog_on_parent(editor_window, self, 520, 600)
         editor_window.bind('<Destroy>', lambda e: setattr(self, 'editor_window', None))        
         main_frame = customtkinter.CTkFrame(editor_window)
         main_frame.pack(fill="both", expand=True, padx=15, pady=15)
@@ -1705,9 +1910,9 @@ class App(customtkinter.CTk):
         def record_shortcut(callback):
             dialog = customtkinter.CTkToplevel(editor_window)
             dialog.title("Record Shortcut")
-            dialog.geometry("350x150")
             dialog.transient(editor_window)
             dialog.grab_set()
+            self._center_dialog_on_parent(dialog, editor_window, 350, 150)
             set_dark_title_bar(dialog)  # Apply dark title bar if in dark mode
             
             label = customtkinter.CTkLabel(dialog, text="Press the desired key combination...", font=("Arial", 12))
@@ -1762,9 +1967,9 @@ class App(customtkinter.CTk):
                 if shortcut:
                     select_dialog = customtkinter.CTkToplevel(editor_window)
                     select_dialog.title("Configure Shortcut")
-                    select_dialog.geometry("400x280")
                     select_dialog.transient(editor_window)
                     select_dialog.grab_set()
+                    self._center_dialog_on_parent(select_dialog, editor_window, 400, 280)
                     set_dark_title_bar(select_dialog)  # Apply dark title bar if in dark mode
 
                     frame = customtkinter.CTkFrame(select_dialog)
@@ -1837,30 +2042,129 @@ class App(customtkinter.CTk):
             record_shortcut(on_shortcut)
             
         def edit_shortcut(shortcut):
-            def on_new_shortcut(new_shortcut):
-                if new_shortcut and new_shortcut != shortcut:
-                    value = self.shortcuts.pop(shortcut)
-                    self.shortcuts[new_shortcut] = value
+            """Edit an existing shortcut - allows changing both the key and the monitor/input"""
+            current_monitor_id, current_input = self.shortcuts.get(shortcut, (0, "HDMI1"))
+            
+            edit_dialog = customtkinter.CTkToplevel(editor_window)
+            edit_dialog.title("Edit Shortcut")
+            edit_dialog.transient(editor_window)
+            edit_dialog.grab_set()
+            self._center_dialog_on_parent(edit_dialog, editor_window, 400, 350)
+            set_dark_title_bar(edit_dialog)
+            
+            frame = customtkinter.CTkFrame(edit_dialog)
+            frame.pack(fill="both", expand=True, padx=20, pady=20)
+            
+            # Current shortcut display
+            shortcut_var = customtkinter.StringVar(value=shortcut)
+            shortcut_label = customtkinter.CTkLabel(frame, text="Shortcut Key:", font=("Arial", 11))
+            shortcut_label.pack(anchor="w", pady=(0, 5))
+            
+            shortcut_frame = customtkinter.CTkFrame(frame, fg_color="transparent")
+            shortcut_frame.pack(fill="x", pady=(0, 15))
+            
+            shortcut_display = customtkinter.CTkLabel(shortcut_frame, textvariable=shortcut_var, font=("Arial", 13, "bold"))
+            shortcut_display.pack(side="left", padx=(0, 10))
+            
+            def change_key():
+                def on_new_key(new_key):
+                    if new_key:
+                        shortcut_var.set(new_key)
+                record_shortcut(on_new_key)
+            
+            change_key_btn = customtkinter.CTkButton(shortcut_frame, text="Change Key", command=change_key, width=100, height=28)
+            change_key_btn.pack(side="left")
+            
+            # Monitor selection
+            monitors_list = self.monitors_data if hasattr(self, 'monitors_data') and self.monitors_data else []
+            mon_choices = [f"{m.get('id')}: {m.get('display_name')}" for m in monitors_list] if monitors_list else ["0"]
+            
+            # Find the current monitor choice
+            current_mon_choice = mon_choices[0]
+            for choice in mon_choices:
+                if choice.startswith(f"{current_monitor_id}:"):
+                    current_mon_choice = choice
+                    break
+            
+            mon_label = customtkinter.CTkLabel(frame, text="Select Monitor:", font=("Arial", 11))
+            mon_label.pack(anchor="w", pady=(0, 5))
+            
+            mon_var = customtkinter.StringVar(value=current_mon_choice)
+            mon_menu = customtkinter.CTkOptionMenu(frame, variable=mon_var, values=mon_choices, height=32)
+            mon_menu.pack(fill="x", pady=(0, 15))
+            
+            # Input selection
+            input_label = customtkinter.CTkLabel(frame, text="Select Input:", font=("Arial", 11))
+            input_label.pack(anchor="w", pady=(0, 5))
+            
+            initial_inputs = []
+            for mon in monitors_list:
+                if mon.get('id') == current_monitor_id:
+                    initial_inputs = mon.get('inputs', [])
+                    break
+            if not initial_inputs:
+                initial_inputs = ["DP1", "HDMI1", "DP2", "HDMI2"]
+            
+            input_var = customtkinter.StringVar(value=current_input if current_input in initial_inputs else initial_inputs[0])
+            input_menu = customtkinter.CTkOptionMenu(frame, variable=input_var, values=initial_inputs, height=32)
+            input_menu.pack(fill="x", pady=(0, 20))
+            
+            def update_input_options(*args):
+                sel = mon_var.get()
+                try:
+                    sel_id = int(sel.split(':', 1)[0].strip()) if ':' in sel else int(sel)
+                except Exception:
+                    return
+                
+                inputs_for_sel = []
+                for mon in monitors_list:
+                    if mon.get('id') == sel_id:
+                        inputs_for_sel = mon.get('inputs', []) or []
+                        break
+                
+                if not inputs_for_sel:
+                    inputs_for_sel = ["DP1", "HDMI1", "DP2", "HDMI2"]
+                
+                input_menu.configure(values=inputs_for_sel)
+                # Keep current input if it exists in new list, otherwise use first
+                if input_var.get() not in inputs_for_sel:
+                    input_var.set(inputs_for_sel[0])
+            
+            mon_var.trace_add('write', update_input_options)
+            
+            def save():
+                try:
+                    new_shortcut = shortcut_var.get()
+                    sel = mon_var.get()
+                    monitor_id = int(sel.split(':', 1)[0].strip()) if ':' in sel else int(sel)
+                    input_source = input_var.get()
+                    
+                    # Remove old shortcut if key changed
+                    if new_shortcut != shortcut:
+                        self.shortcuts.pop(shortcut, None)
+                    
+                    # Save new/updated shortcut
+                    self.shortcuts[new_shortcut] = (monitor_id, input_source)
                     self.save_shortcuts()
-
+                    
                     try:
                         keyboard.clear_all_hotkeys()
                     except Exception:
                         pass
-
+                    
                     self.setup_global_hotkeys()
                     update_shortcuts_list()
-
+                    
                     try:
-                        messagebox.showinfo(
-                            "Success",
-                            f"Shortcut '{new_shortcut}' saved!",
-                            parent=editor_window
-                        )
+                        messagebox.showinfo("Success", f"Shortcut '{new_shortcut}' saved!", parent=edit_dialog)
                     except Exception:
                         pass
-
-            record_shortcut(on_new_shortcut)
+                    edit_dialog.destroy()
+                except ValueError:
+                    messagebox.showerror("Error", "Invalid monitor selection", parent=edit_dialog)
+            
+            save_btn = customtkinter.CTkButton(frame, text="Save Changes", command=save, height=36, font=("Arial", 12, "bold"))
+            save_btn.pack(fill="x")
 
             
         def delete_shortcut(shortcut):
@@ -1901,9 +2205,9 @@ class App(customtkinter.CTk):
         """Show shortcuts help dialog"""
         help_window = customtkinter.CTkToplevel(self)
         help_window.title("Keyboard Shortcuts Help")
-        help_window.geometry("450x400")
         help_window.transient(self)
         help_window.grab_set()
+        self._center_dialog_on_parent(help_window, self, 450, 400)
         
         frame = customtkinter.CTkScrollableFrame(help_window)
         frame.pack(fill="both", expand=True, padx=20, pady=20)
