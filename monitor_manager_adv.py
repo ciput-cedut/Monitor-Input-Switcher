@@ -1726,10 +1726,10 @@ class App(customtkinter.CTk):
             btn_frame = customtkinter.CTkFrame(frm, fg_color='transparent')
             btn_frame.grid(row=3, column=0, columnspan=2, sticky='ew', pady=(10, 0))
 
-            save_btn = customtkinter.CTkButton(btn_frame, text="💾 Save", command=save_edit, height=36, width=100)
+            save_btn = customtkinter.CTkButton(btn_frame, text="💾 Save", command=save_edit, height=36, width=100, fg_color="#28a745", hover_color="#218838")
             save_btn.pack(side="right", padx=(0, 6))
 
-            cancel_btn = customtkinter.CTkButton(btn_frame, text="Cancel", command=edit_win.destroy, height=36, width=100)
+            cancel_btn = customtkinter.CTkButton(btn_frame, text="Cancel", command=edit_win.destroy, height=36, width=100, fg_color="#dc3545", hover_color="#c82333")
             cancel_btn.pack(side="right", padx=(0, 6))
 
             # Make the edit dialog a bit larger (but smaller than Manage Favorites)
@@ -1753,16 +1753,7 @@ class App(customtkinter.CTk):
         name_label = customtkinter.CTkLabel(form_frame, text="Name:", font=("Arial", 11))
         name_label.grid(row=0, column=0, sticky="w", pady=(0, 8))
         
-        name_var = customtkinter.StringVar(value="My Setup")
-        
-        # Limit name entry to 20 characters
-        def limit_name_length(*args):
-            value = name_var.get()
-            if len(value) > 20:
-                name_var.set(value[:20])
-        name_var.trace_add('write', limit_name_length)
-        
-        name_entry = customtkinter.CTkEntry(form_frame, textvariable=name_var, height=32)
+        name_entry = customtkinter.CTkEntry(form_frame, height=32, placeholder_text="Your Setup Name")
         name_entry.grid(row=0, column=1, sticky="ew", pady=(0, 8), padx=(10, 0))
         
         # Monitor selection - using helper method
@@ -1796,7 +1787,7 @@ class App(customtkinter.CTk):
         mon_var.trace_add('write', update_input_options)
         
         def add_fav():
-            name = name_var.get().strip()
+            name = name_entry.get().strip()
             
             # FIX #7: Use validation helper method
             is_valid, error_msg = self._validate_favorite_name(name)
@@ -1815,12 +1806,12 @@ class App(customtkinter.CTk):
             if self.add_favorite(name, monitor_id, input_source):
                 update_favorites_list()
                 self.refresh_favorites_buttons()
-                name_var.set("My Setup")
+                name_entry.delete(0, 'end')
                 messagebox.showinfo("Success", f"Favorite '{name}' added!", parent=manage_window)
             else:
                 messagebox.showerror("Error", "Failed to add favorite", parent=manage_window)
         
-        add_btn = customtkinter.CTkButton(form_frame, text="➕ Add Favorite", command=add_fav, height=36, font=("Arial", 12, "bold"))
+        add_btn = customtkinter.CTkButton(form_frame, text="➕ Add Favorite", command=add_fav, height=36, font=("Arial", 12, "bold"), fg_color="#28a745", hover_color="#218838")
         add_btn.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(10, 0))
         
         update_favorites_list()
@@ -2036,7 +2027,7 @@ class App(customtkinter.CTk):
                         except ValueError:
                             messagebox.showerror("Error", "Invalid monitor selection", parent=select_dialog)
 
-                    save_btn = customtkinter.CTkButton(frame, text="Save Shortcut", command=save, height=36, font=("Arial", 12, "bold"))
+                    save_btn = customtkinter.CTkButton(frame, text="Save Shortcut", command=save, height=36, font=("Arial", 12, "bold"), fg_color="#28a745", hover_color="#218838")
                     save_btn.pack(fill="x")
 
                     def update_input_options(*args):
@@ -2185,7 +2176,7 @@ class App(customtkinter.CTk):
                 except ValueError:
                     messagebox.showerror("Error", "Invalid monitor selection", parent=edit_dialog)
             
-            save_btn = customtkinter.CTkButton(frame, text="Save Changes", command=save, height=36, font=("Arial", 12, "bold"))
+            save_btn = customtkinter.CTkButton(frame, text="Save Changes", command=save, height=36, font=("Arial", 12, "bold"), fg_color="#28a745", hover_color="#218838")
             save_btn.pack(fill="x")
 
             
@@ -2218,7 +2209,7 @@ class App(customtkinter.CTk):
         buttons_frame = customtkinter.CTkFrame(main_frame, fg_color="transparent")
         buttons_frame.pack(fill="x")
         
-        add_button = customtkinter.CTkButton(buttons_frame, text="➕ Add New Shortcut", command=add_new_shortcut, height=36, font=("Arial", 12, "bold"))
+        add_button = customtkinter.CTkButton(buttons_frame, text="➕ Add New Shortcut", command=add_new_shortcut, height=36, font=("Arial", 12, "bold"), fg_color="#28a745", hover_color="#218838")
         add_button.pack(fill="x")
         
         update_shortcuts_list()
