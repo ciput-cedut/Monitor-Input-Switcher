@@ -557,7 +557,7 @@ class App(customtkinter.CTk):
             except Exception:
                 pass
             self.status_label.configure(text="❌ No monitors found. Check connections and refresh.")
-            self.shortcuts_button.configure(state="normal") #grayout for button (normal/disabled)
+            self.shortcuts_button.configure(state="disabled") #grayout for button (normal/disabled)
             self.manage_favorites_btn.configure(state="disabled") #grayout for button (normal/disabled)
             # Keep settings and theme available so the user can change preferences even if no monitors are found
             try:
