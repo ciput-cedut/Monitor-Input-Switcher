@@ -1031,16 +1031,19 @@ class App(customtkinter.CTk):
             width: Optional base width (will be scaled and use dialog's requested width if not specified)
             height: Optional base height (will be scaled and use dialog's requested height if not specified)
         """
-        dialog.update_idletasks()  # Ensure geometry is calculated
+        # Ensure both parent and dialog geometries are fully calculated
+        parent.update_idletasks()
+        dialog.update_idletasks()
         
         # Scale the provided dimensions, or use dialog's requested size
         dlg_width = self.ui.size(width) if width else dialog.winfo_reqwidth()
         dlg_height = self.ui.size(height) if height else dialog.winfo_reqheight()
         
-        # Get parent's absolute position on the virtual screen (includes multi-monitor offset)
-        # winfo_rootx/rooty give the absolute position including window decorations
-        parent_x = parent.winfo_rootx()
-        parent_y = parent.winfo_rooty()
+        # Get parent's absolute position on the virtual screen
+        # Use winfo_x/winfo_y which give the window's top-left position
+        # These work correctly on multi-monitor setups including negative coordinates
+        parent_x = parent.winfo_x()
+        parent_y = parent.winfo_y()
         parent_width = parent.winfo_width()
         parent_height = parent.winfo_height()
         
@@ -1049,11 +1052,8 @@ class App(customtkinter.CTk):
         x = parent_x + (parent_width - dlg_width) // 2
         y = parent_y + (parent_height - dlg_height) // 2
         
-        # Don't clamp to primary screen bounds - allow positioning on any monitor
-        # Just ensure dialog doesn't go off the top-left edge
-        x = max(0, x)
-        y = max(0, y)
-        
+        # Allow negative coordinates for monitors to the left/above primary
+        # Only ensure the dialog is at least partially visible
         dialog.geometry(f"{dlg_width}x{dlg_height}+{x}+{y}")
 
     def switch_to_favorite(self, name):
