@@ -546,6 +546,10 @@ class App(customtkinter.CTk):
         self.tray_icon = None        # pystray Icon object (created when minimizing to tray)
         self.is_quitting = False     # Flag to distinguish close vs minimize to tray
         
+        # Easter egg click counter (hidden feature)
+        self._easter_egg_clicks = 0
+        self._easter_egg_last_click = 0
+        
         # FIX #2: Instance-level monitors list (refreshed dynamically)
         # Previously was a module-level variable that only updated at startup
         self.monitors = []
@@ -619,6 +623,9 @@ class App(customtkinter.CTk):
             font=self.ui.font("Arial", 20, "bold")
         )
         title_label.pack(side="left", padx=self.ui.size(10), pady=self.ui.size(10))
+        
+        # Easter egg: Click title 5 times to reveal hidden dialog
+        title_label.bind("<Button-1>", self._on_title_click)
 
         # Header button frame (right side) - contains theme, shortcuts, settings buttons
         btn_frame = customtkinter.CTkFrame(header, fg_color="transparent")
@@ -2282,6 +2289,97 @@ class App(customtkinter.CTk):
             hover_color=("#246A09", "#52A038")
         )
         apply_btn.pack(side="left", padx=self.ui.size(8))
+
+    # ==========================================================================
+    # EASTER EGG (Hidden Feature)
+    # ==========================================================================
+
+    def _on_title_click(self, event):
+        """
+        Handle clicks on the title label for easter egg activation.
+        
+        Tracks rapid consecutive clicks within a 0.4-second window. After 5 fast
+        clicks, displays the hidden easter egg dialog and resets the counter.
+        User must click continuously without stopping.
+        
+        Disabled during monitor refresh to prevent interference.
+        """
+        # Don't trigger easter egg while app is refreshing monitors
+        if getattr(self, '_loading_monitors', False):
+            return
+        
+        import time
+        current_time = time.time()
+        
+        # Reset counter if more than 0.4 seconds since last click (must click rapidly)
+        if current_time - self._easter_egg_last_click > 0.4:
+            self._easter_egg_clicks = 0
+        
+        self._easter_egg_clicks += 1
+        self._easter_egg_last_click = current_time
+        
+        # Trigger easter egg after 5 rapid clicks
+        if self._easter_egg_clicks >= 5:
+            self._easter_egg_clicks = 0
+            self._show_easter_egg()
+
+    def _show_easter_egg(self):
+        """
+        Display the hidden easter egg dialog.
+        
+        A fun surprise for users who discover the secret!
+        """
+        egg_window = customtkinter.CTkToplevel(self)
+        egg_window.title("🥚 You found it!")
+        egg_window.resizable(False, False)
+        egg_window.transient(self)
+        egg_window.grab_set()
+        self._center_dialog_on_parent(egg_window, self, 400, 300)
+        
+        # Apply dark title bar if in dark mode
+        try:
+            set_dark_title_bar(egg_window)
+        except:
+            pass
+        
+        frame = customtkinter.CTkFrame(egg_window)
+        frame.pack(fill="both", expand=True, padx=20, pady=20)
+        
+        # Fun emoji header
+        emoji_label = customtkinter.CTkLabel(
+            frame,
+            text="🎉🥚🎉",
+            font=("Arial", 48)
+        )
+        emoji_label.pack(pady=(10, 15))
+        
+        # Easter egg message
+        title_label = customtkinter.CTkLabel(
+            frame,
+            text="You found the Easter Egg!",
+            font=("Arial", 18, "bold")
+        )
+        title_label.pack(pady=(0, 10))
+        
+        message_label = customtkinter.CTkLabel(
+            frame,
+            text="Congratulations, curious clicker! 🐣\n\nThanks for using Monitor Input Switcher.\nYou're awesome!",
+            font=("Arial", 12),
+            justify="center"
+        )
+        message_label.pack(pady=(0, 20))
+        
+        # Close button
+        close_btn = customtkinter.CTkButton(
+            frame,
+            text="✨ Nice! ✨",
+            command=egg_window.destroy,
+            height=36,
+            font=("Arial", 12, "bold"),
+            fg_color="#9B59B6",
+            hover_color="#8E44AD"
+        )
+        close_btn.pack(fill="x")
 
     # ==========================================================================
     # SYSTEM TRAY FUNCTIONALITY

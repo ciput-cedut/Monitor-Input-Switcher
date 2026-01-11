@@ -1,6 +1,0 @@
-2025-11-04 14:52:43,209 - INFO - Found 2 monitors.
-2025-11-04 14:52:43,305 - INFO - WMI PnP IDs: ['DISPLAY\\SHP14B3\\4&2D731249&0&UID8388688']
-2025-11-04 14:52:43,311 - WARNING - Could not get model for monitor 0: failed to get VCP capabilities: An error occurred while transmitting data to the device on the I2C bus.
-2025-11-04 15:38:48,938 - INFO - Found 2 monitors.
-2025-11-04 15:38:49,139 - INFO - WMI PnP IDs: ['DISPLAY\\SHP14B3\\4&2D731249&0&UID8388688']
-2025-11-04 15:38:49,139 - WARNING - Could not get model for monitor 0: failed to get VCP capabilities: An error occurred while transmitting data to the device on the I2C bus.
