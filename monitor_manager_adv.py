@@ -546,6 +546,10 @@ class App(customtkinter.CTk):
         self.tray_icon = None        # pystray Icon object (created when minimizing to tray)
         self.is_quitting = False     # Flag to distinguish close vs minimize to tray
         
+        # Easter egg click counter (hidden feature)
+        self._easter_egg_clicks = 0
+        self._easter_egg_last_click = 0
+        
         # FIX #2: Instance-level monitors list (refreshed dynamically)
         # Previously was a module-level variable that only updated at startup
         self.monitors = []
@@ -619,6 +623,9 @@ class App(customtkinter.CTk):
             font=self.ui.font("Arial", 20, "bold")
         )
         title_label.pack(side="left", padx=self.ui.size(10), pady=self.ui.size(10))
+        
+        # Easter egg: Click title 5 times to reveal hidden dialog
+        title_label.bind("<Button-1>", self._on_title_click)
 
         # Header button frame (right side) - contains theme, shortcuts, settings buttons
         btn_frame = customtkinter.CTkFrame(header, fg_color="transparent")
@@ -2282,6 +2289,210 @@ class App(customtkinter.CTk):
             hover_color=("#246A09", "#52A038")
         )
         apply_btn.pack(side="left", padx=self.ui.size(8))
+
+    # ==========================================================================
+    # EASTER EGG (Hidden Feature)
+    # ==========================================================================
+
+    def _on_title_click(self, event):
+        """
+        Handle clicks on the title label for easter egg activation.
+        
+        Tracks rapid consecutive clicks within a 0.4-second window. After 5 fast
+        clicks, displays the hidden easter egg dialog and resets the counter.
+        User must click continuously without stopping.
+        
+        Disabled during monitor refresh to prevent interference.
+        """
+        # Don't trigger easter egg while app is refreshing monitors
+        if getattr(self, '_loading_monitors', False):
+            return
+        
+        import time
+        current_time = time.time()
+        
+        # Reset counter if more than 0.4 seconds since last click (must click rapidly)
+        if current_time - self._easter_egg_last_click > 0.4:
+            self._easter_egg_clicks = 0
+        
+        self._easter_egg_clicks += 1
+        self._easter_egg_last_click = current_time
+        
+        # Trigger easter egg after 5 rapid clicks
+        if self._easter_egg_clicks >= 5:
+            self._easter_egg_clicks = 0
+            self._show_easter_egg()
+
+    def _show_easter_egg(self):
+        """
+        Display the hidden easter egg dialog.
+        
+        A fun surprise for users who discover the secret!
+        Includes a real-time clock and countdown to the weekend.
+        """
+        from datetime import datetime, timedelta
+        
+        egg_window = customtkinter.CTkToplevel(self)
+        egg_window.title("🥚🥚🥚")
+        egg_window.resizable(False, False)
+        egg_window.transient(self)
+        egg_window.grab_set()
+        self._center_dialog_on_parent(egg_window, self, 420, 420)
+        
+        # Apply dark title bar if in dark mode
+        try:
+            set_dark_title_bar(egg_window)
+        except:
+            pass
+        
+        frame = customtkinter.CTkFrame(egg_window)
+        frame.pack(fill="both", expand=True, padx=20, pady=20)
+        
+        # Fun emoji header
+        emoji_label = customtkinter.CTkLabel(
+            frame,
+            text="🎉🥚🎉",
+            font=("Arial", 48)
+        )
+        emoji_label.pack(pady=(10, 10))
+        
+        # Easter egg message
+        title_label = customtkinter.CTkLabel(
+            frame,
+            text="Bro, tkde kerja ke?!",
+            font=("Arial", 18, "bold")
+        )
+        title_label.pack(pady=(0, 5))
+        
+        message_label = customtkinter.CTkLabel(
+            frame,
+            text="Anyway, CONGRATS--you made it to work today! 🐣\n\nThanks for using Monitor Manager.\nRemember, You're AWESOMEE!!! \nFrom, Budak Purple",
+            font=("Arial", 12),
+            justify="center"
+        )
+        message_label.pack(pady=(0, 15))
+        
+        # Separator
+        separator = customtkinter.CTkFrame(frame, height=2, fg_color="#9B59B6")
+        separator.pack(fill="x", pady=(0, 15))
+        
+        # Real-time clock display
+        clock_label = customtkinter.CTkLabel(
+            frame,
+            text="",
+            font=("Arial", 28, "bold"),
+            text_color="#9B59B6"
+        )
+        clock_label.pack(pady=(0, 5))
+        
+        # Special weekday message label
+        message_label = customtkinter.CTkLabel(
+            frame,
+            text="",
+            font=("Arial", 14, "bold"),
+            text_color="#888888"
+        )
+        message_label.pack(pady=(0, 5))
+        
+        # Countdown timer label (separate for different color)
+        countdown_label = customtkinter.CTkLabel(
+            frame,
+            text="",
+            font=("Arial", 14, "bold"),
+            text_color="#888888"
+        )
+        countdown_label.pack(pady=(0, 15))
+        
+        # Track if window is still open for timer updates
+        egg_window._is_open = True
+        
+        def update_clock():
+            """Update the clock and countdown every second."""
+            if not egg_window._is_open:
+                return
+            try:
+                if not egg_window.winfo_exists():
+                    return
+            except:
+                return
+            
+            now = datetime.now()
+            
+            # Update clock display
+            time_str = now.strftime("%I:%M:%S %p")
+            date_str = now.strftime("%A, %B %d, %Y")
+            clock_label.configure(text=f"🕐 {time_str}")
+            
+            # Calculate countdown to weekend (Saturday 00:00:00)
+            weekday = now.weekday()  # Monday=0, Sunday=6
+            
+            # Special messages for each weekday with unique colors (message color, countdown color)
+            weekday_data = {
+                0: ("😫 Ugh, Monday Biru ... Mengopi dulu!! ☕", "#3498DB", "#E67E22"),    # Monday - Blue msg, Orange countdown
+                1: ("💪 Bilalah nak jumaat ni!! 🔥", "#E74C3C", "#1ABC9C"),               # Tuesday - Red msg, Teal countdown
+                2: ("🐪 Ehh dah rabu dah, sikit je lagi!! 🎯", "#F39C12", "#3498DB"),    # Wednesday - Orange msg, Blue countdown
+                3: ("⚡ Cantikk esok dah jumaat!! 🌟", "#9B59B6", "#F1C40F"),             # Thursday - Purple msg, Yellow countdown
+                4: ("😎 Santaii esok dah cuti!! 🏖️", "#27AE60", "#27AE60"),              # Friday - Green (no countdown shown)
+            }
+            
+            if weekday >= 5:  # Saturday (5) or Sunday (6)
+                message_label.configure(text="🎉 IT'S THE WEEKEND! ENJOY! 🎉", text_color="#27AE60")
+                countdown_label.configure(text="")
+            else:
+                # Days until Saturday
+                days_until_saturday = 5 - weekday
+                
+                # Calculate exact time until Saturday 00:00:00
+                next_saturday = now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=days_until_saturday)
+                time_remaining = next_saturday - now
+                
+                total_seconds = int(time_remaining.total_seconds())
+                days = total_seconds // 86400
+                hours = (total_seconds % 86400) // 3600
+                minutes = (total_seconds % 3600) // 60
+                seconds = total_seconds % 60
+                
+                # Get the special message and colors for today
+                special_msg, msg_color, timer_color = weekday_data.get(weekday, ("", "#E67E22", "#3498DB"))
+                
+                # Update message label with day's color
+                message_label.configure(text=special_msg, text_color=msg_color)
+                
+                if weekday == 4:  # Friday - just show the message, no countdown
+                    countdown_label.configure(text="")
+                else:
+                    # Show countdown with opposite color
+                    if days > 0:
+                        countdown_text = f"⏳ {days}d {hours}h {minutes}m {seconds}s until SABTU!!"
+                    else:
+                        countdown_text = f"⏳ {hours}h {minutes}m {seconds}s until SABTU!!"
+                    
+                    countdown_label.configure(text=countdown_text, text_color=timer_color)
+            
+            # Schedule next update in 1 second
+            egg_window.after(1000, update_clock)
+        
+        def on_close():
+            """Handle window close to stop the timer."""
+            egg_window._is_open = False
+            egg_window.destroy()
+        
+        egg_window.protocol("WM_DELETE_WINDOW", on_close)
+        
+        # Start the clock
+        update_clock()
+        
+        # Close button
+        close_btn = customtkinter.CTkButton(
+            frame,
+            text="✨ Pergi sambung kerja!! ✨",
+            command=on_close,
+            height=36,
+            font=("Arial", 12, "bold"),
+            fg_color="#9B59B6",
+            hover_color="#8E44AD"
+        )
+        close_btn.pack(fill="x")
 
     # ==========================================================================
     # SYSTEM TRAY FUNCTIONALITY
