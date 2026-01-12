@@ -2330,7 +2330,7 @@ class App(customtkinter.CTk):
         A fun surprise for users who discover the secret!
         """
         egg_window = customtkinter.CTkToplevel(self)
-        egg_window.title("🥚 You found it!")
+        egg_window.title("🥚🥚🥚")
         egg_window.resizable(False, False)
         egg_window.transient(self)
         egg_window.grab_set()
@@ -2356,14 +2356,14 @@ class App(customtkinter.CTk):
         # Easter egg message
         title_label = customtkinter.CTkLabel(
             frame,
-            text="You found the Easter Egg!",
+            text="Bro, why you click 5 times!",
             font=("Arial", 18, "bold")
         )
         title_label.pack(pady=(0, 10))
         
         message_label = customtkinter.CTkLabel(
             frame,
-            text="Congratulations, curious clicker! 🐣\n\nThanks for using Monitor Input Switcher.\nYou're awesome!",
+            text="Congratulations PIDICII! 🐣\n\nThanks for using Monitor Input Switcher.\nRemember, You're awesome!!! \nFrom, Budak Purple",
             font=("Arial", 12),
             justify="center"
         )
