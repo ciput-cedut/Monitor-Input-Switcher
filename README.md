@@ -1,4 +1,4 @@
-# Monitor Manager
+# Monitor Input Switcher
 
 A Windows application for managing multiple monitors with customizable input switching, keyboard shortcuts, and system tray integration.
 
