@@ -1,9 +1,3 @@
-Nice project 👍 — your README is already **good**, it just needs the same **polish, structure, and storytelling** as the Varkala example.
-
-Below is an **improved, copy-paste ready README.md**, rewritten to match the quality, clarity, and flow of the example you gave, while staying true to *your* project.
-
----
-
 # 🖥️ Monitor Input Switcher
 
 *A Windows desktop application for managing multiple monitors with fast input switching, global shortcuts, and system tray control.*
