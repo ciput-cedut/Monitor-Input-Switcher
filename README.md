@@ -236,6 +236,17 @@ See the [LICENSE](LICENSE) file for details.
 
 ---
 
+📓DevTeams
+
+Yumirak
+
+---
+
+👥 Authors
+
+ciput-cedut
+---
+
 ## 📞 Support
 
 * Open an issue on GitHub for bugs or feature requests
