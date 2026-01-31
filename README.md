@@ -2,15 +2,15 @@
 
 *A Windows desktop application for managing multiple monitors with fast input switching, global shortcuts, and system tray control.*
 
-Monitor Input Switcher simplifies working with multi-monitor setups by allowing users to switch monitor input sources, manage layouts, and control displays directly from the keyboard or system tray. Built with Python and a modern CustomTkinter UI, it focuses on productivity, automation, and seamless Windows integration.
+Monitor Input Switcher simplifies multi-monitor workflows by allowing users to switch monitor input sources, manage layouts, and control displays directly from the keyboard or system tray. Built with Python and a modern CustomTkinter UI, it focuses on productivity, automation, and seamless Windows integration.
 
 ---
 
 ## 🚀 Project Overview
 
-Monitor Input Switcher is designed for users who frequently switch between multiple devices (PCs, laptops, consoles) connected to the same monitors. Instead of using physical monitor buttons, the application leverages **DDC/CI**, **global hotkeys**, and **Windows APIs** to provide fast, software-based monitor control.
+Monitor Input Switcher is designed for users who frequently switch between multiple devices (PCs, laptops, consoles) connected to the same set of monitors. Instead of relying on physical monitor buttons, the application leverages **DDC/CI**, **global hotkeys**, and **Windows APIs** to provide fast, software-based monitor control.
 
-The project supports configurable shortcuts, persistent user preferences, tray-based operation, and optional startup behavior—making it ideal for power users and multi-device workstations.
+The application supports configurable shortcuts, persistent user preferences, background tray operation, and optional startup behavior—making it ideal for power users and multi-device workstations.
 
 ---
 
@@ -113,21 +113,21 @@ KaizenV3.1/
 
 ### Installation
 
-Clone the repository:
+1. **Clone the repository**
 
 ```bash
 git clone <repository-url>
 cd KaizenV3.1
 ```
 
-Create and activate a virtual environment:
+2. **Create and activate a virtual environment**
 
 ```bash
 python -m venv venv
 venv\Scripts\activate
 ```
 
-Install dependencies:
+3. **Install dependencies**
 
 ```bash
 pip install -r requirements.txt
@@ -153,10 +153,10 @@ Configure shortcuts in the application to:
 
 ### System Tray
 
-* Left-click: Show / hide main window
-* Right-click: Access quick actions and settings
+* **Left-click:** Show / hide main window
+* **Right-click:** Access quick actions and settings
 
-The app can remain running in the background without interrupting workflow.
+The application can remain running in the background without interrupting workflow.
 
 ---
 
@@ -177,13 +177,13 @@ Included files:
 
 ## 📦 Building a Standalone Executable
 
-To build a Windows executable:
+To create a Windows executable:
 
 ```bash
 pyinstaller --onefile --windowed --icon=icon.ico monitor_manager.py
 ```
 
-The compiled `.exe` will be available in the `dist/` directory.
+The compiled executable will be available in the `dist/` directory.
 
 ---
 
@@ -193,7 +193,7 @@ The compiled `.exe` will be available in the `dist/` directory.
 
 * Ensure the monitor supports **DDC/CI**
 * Check cable connections
-* Try running the app as Administrator
+* Try running the application as Administrator
 
 ### Keyboard Shortcuts Not Working
 
@@ -205,9 +205,10 @@ The compiled `.exe` will be available in the `dist/` directory.
 
 * Check logs at:
 
-  ```
-  %APPDATA%\monitor_manager\monitor_manager.log
-  ```
+```
+%APPDATA%\monitor_manager\monitor_manager.log
+```
+
 * Verify Python version (3.8+)
 * Ensure all dependencies are installed
 
@@ -220,12 +221,26 @@ Contributions are welcome!
 1. Fork the repository
 2. Create a feature branch
 
-   ```bash
-   git checkout -b feature/AmazingFeature
-   ```
+```bash
+git checkout -b feature/AmazingFeature
+```
+
 3. Commit your changes
 4. Push to your branch
 5. Open a Pull Request
+
+---
+
+## 📓 Dev Teams
+
+**Yumirak**
+Core development team responsible for design, implementation, and system architecture.
+
+---
+
+## 👥 Authors
+
+* **ciput-cedut** – Project owner & main contributor
 
 ---
 
@@ -236,31 +251,9 @@ See the [LICENSE](LICENSE) file for details.
 
 ---
 
-📓DevTeams
-
-Yumirak
-
----
-
-👥 Authors
-
-ciput-cedut
----
-
 ## 📞 Support
 
 * Open an issue on GitHub for bugs or feature requests
 * Contact the maintainer for questions or feedback
 
 Happy switching! 🚀
-
----
-
-If you want next:
-
-* 🔹 A **shorter recruiter-friendly README**
-* 🔹 Badges (Python version, OS, license)
-* 🔹 Screenshots section
-* 🔹 GitHub “About” + tags optimization
-
-Just say the word.
